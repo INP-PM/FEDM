@@ -152,7 +152,7 @@ In agreement with the FEniCS licensing, FEDM is open source code developed under
 
 ## Acknowledgment
 
-The development of FEDM is funded by the Deutsche Forschungsgemeinschaft (DFG, German Research Foundation)—project number 407462159. The authors wish to thank the users of [FEniCS forum](https://fenicsproject.discourse.group) for useful information and discussion.
+The development of the FEDM is funded by the Deutsche Forschungsgemeinschaft (DFG, German Research Foundation)—project number 407462159. The authors wish to thank the users of [FEniCS forum](https://fenicsproject.discourse.group) for useful information and discussion.
 
 ## Citation
 

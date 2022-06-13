@@ -1,0 +1,12 @@
+################################################################################
+#
+# Description: diffusion coefficient
+# Species:     Ar[1p0]
+# Data source: M. Becker et al. Comput. Phys. Commun. 180 (2009) 1230
+# Data:        const  N*D [1/(m s)]
+# Dependence:  const
+# Comment:
+#
+################################################################################
+
+0.00000E+00

@@ -1,0 +1,12 @@
+################################################################################
+#
+# Description: rate coefficient
+# Reaction:    Ar^* + Ar^* -> Ar^+ + e + Ar[1p0]
+# Data source: M. Becker et al. Comput. Phys. Commun. 180 (2009) 1230
+# Data:        const k [m^3/s]
+# Dependence:  const
+# Comment:
+#
+################################################################################
+
+0.81E-15

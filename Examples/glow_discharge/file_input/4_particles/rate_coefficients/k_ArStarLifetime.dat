@@ -1,0 +1,12 @@
+################################################################################
+#
+# Description: lifetime of metastable atoms
+# Reaction:    Ar^* -> 0
+# Data source: M. Becker et al. Comput. Phys. Commun. 180 (2009) 1230
+# Data:        const k [1/s]
+# Dependence:  const
+# Comment:
+#
+################################################################################
+
+1e6

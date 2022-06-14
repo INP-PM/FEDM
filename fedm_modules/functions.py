@@ -285,7 +285,7 @@ def Boundary_flux(bc_type, type_of_equation, particle_type, sign, mu, E, normal,
             BF = 2.0*pi*dot(sign*mu * E, normal)*exp(u)*v*r*ds
     return BF
 
-def Transport_coefficient_interpolation(status, dependence, N0, Tgas, k_coeff, kx, ky, energy, redfield, mu = 0.0):
+def Transport_coefficient_interpolation(status, dependence, N0, Tgas, k_coeff, kx, ky, energy, redfield, mu = 0.0, Te = 0):
     """
     Function for linear interpolation of transport coefficients. Input
     arguments are status (initial definition or update), dependence
@@ -354,6 +354,17 @@ def Rate_coefficient_interpolation(status, dependence, k_coeff, kx, ky, energy, 
             elif dependence[i] == 'Te':
                 k_coeff[i].vector()[:] = np.interp(2*energy.vector()[:]/(3*kB_eV), kx[i], ky[i])
             i += 1
+
+def semi_implicit_coefficients(dependence, mean_energy_new, mean_energy_old, coefficient, coefficient_diff):
+    coefficient_si = []
+    i = 0
+    while i < len(dependence):
+        if dependence[i] == "Umean":
+            coefficient_si.append(coefficient[i] + coefficient_diff[i]*(mean_energy_new - mean_energy_old))
+        else:
+            coefficient_si.append(coefficient[i])
+        i += 1
+    return coefficient_si
 
 def Source_term(coupling, approx, p_matrix, l_matrix, g_matrix, k_coeff, N0, u):
     """
@@ -523,6 +534,8 @@ def Energy_Source_term(coupling, p_matrix, l_matrix, g_matrix, k_coeff, u_loss, 
                 Rate[j] = -(Ei - mean_energy)*k_coeff[j]*temp
             elif  u_loss[j] > 9e99 and u_loss[j] < 1e100:
                 Rate[j] = -mean_energy*k_coeff[j]*temp
+            else:
+                Rate[j] = -u_loss[j]*k_coeff[j]*temp
             j += 1
         f_temp = 0
         i = 0

@@ -21,9 +21,10 @@ parameters["form_compiler"]["optimize"]     = True
 parameters["form_compiler"]["cpp_optimize"] = True
 parameters["std_out_all_processes"] = False
 parameters['krylov_solver']['nonzero_initial_guess'] = True
+parameters["form_compiler"]["quadrature_degree"] = 2
 
 # Defining tye of used solver and its parameters.
-linear_solver = "mumps" # Type of linear solver lu | mumps | gmres | bicgstab
+linear_solver = "gmres" # Type of linear solver lu | mumps | gmres | bicgstab
 maximum_iterations = 20
 relative_tolerance = 1e-4
 
@@ -283,7 +284,7 @@ problem = Problem(J, F, bc)
 nonlinear_solver = PETScSNESSolver()
 nonlinear_solver.parameters['relative_tolerance'] = relative_tolerance
 nonlinear_solver.parameters["linear_solver"]= linear_solver
-# nonlinear_solver.parameters["preconditioner"] = "hypre_amg" # setting the preconditioner, uncomment if iterative solver is used
+nonlinear_solver.parameters["preconditioner"] = "hypre_amg" # setting the preconditioner, uncomment if iterative solver is used
 
 # ============================================================================
 # Time loop
@@ -295,7 +296,7 @@ while abs(t-T_final)/T_final > 1e-6:
     assigner.assign(variable_list_old, u_old)
 
     ## Solving problem with adaptive time step
-    t = adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, variable_list_new, variable_list_old, assigner, error, file_error, max_error, ttol, dt_min, time_dependent_arguments = [Phi_powered], approximation = approximation)
+    t = adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, variable_list_new, variable_list_old, assigner, error, file_error, max_error, ttol, dt_min, time_dependent_arguments = [], approximation = approximation)
 
     ## For the constant time step, comment previous and  uncomment following code block
     #t += dt.time_step

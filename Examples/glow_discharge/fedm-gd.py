@@ -26,6 +26,8 @@ parameters["form_compiler"]["optimize"] = True
 parameters["form_compiler"]["cpp_optimize"] = True
 parameters["std_out_all_processes"] = False
 parameters['krylov_solver']['nonzero_initial_guess'] = True
+parameters["form_compiler"]["quadrature_degree"] = 4
+
 
 # Defining type of used solver and its parameters.
 linear_solver = "mumps"  # Type of linear solvers: lu | mumps | gmres | bicgstab
@@ -149,7 +151,7 @@ log('properties', model_logging, gas, model, particle_species_file_names, M, cha
 # ===========================================================================================================================
 # Mesh setup and boundary measure redefinition. Structured mesh is generated using built-in mesh generator
 # ===========================================================================================================================
-mesh_plasma = RectangleMesh(Point(0, 0), Point(wall, gap_length), 100, 100, "crossed")  # Generating structured triangular mesh
+mesh_plasma = RectangleMesh(Point(0, 0), Point(wall, gap_length), 20, 50, "crossed")  # Generating structured triangular mesh
 
 mesh_statistics(mesh_plasma)  # Prints number of elements, minimum and maximum cell diameter
 log('mesh', model_logging, mesh_plasma)  # Writting mesh statistcs to the log file
@@ -306,39 +308,13 @@ redE.assign(project(1e21*sqrt(dot(-grad(Phi), -grad(Phi)))/N0, solver_type='mump
 redE_old.assign(redE)  # Updating reduced electric field in previous time step
 
 # Calculating transport and rate coefficients using linear interpolation
-Transport_coefficient_interpolation('initial', mobility_dependence, N0, Tgas, mu, mu_x, mu_y, mean_energy, redE)  # Mobilities interpolation
-Transport_coefficient_interpolation('initial', Diffusion_dependence, N0, Tgas, D, D_x, D_y, mean_energy, redE, mu)  # Diffusion coefficients interpolation
-Rate_coefficient_interpolation('initial', k_dependence, rate_coefficient, k_x, k_y, mean_energy, redE)  # Rates coefficients interpolation
+Transport_coefficient_interpolation('initial', mobility_dependence, N0, Tgas, mu, mu_x, mu_y, mean_energy, redE, mu, Te = 0)  # Mobilities interpolation
+Transport_coefficient_interpolation('initial', Diffusion_dependence, N0, Tgas, D, D_x, D_y, mean_energy, redE, mu, Te = 0)  # Diffusion coefficients interpolation
+Rate_coefficient_interpolation('initial', k_dependence, rate_coefficient, k_x, k_y, mean_energy, redE, Te = 0, Tgas = 0)  # Rates coefficients interpolation
 
-rate_coefficient_si = []
-D_si = []
-mu_si = []
-
-i = 0
-while i < len(k_y):
-    if k_dependence[i] == "Umean":
-        rate_coefficient_si.append(rate_coefficient[i] + rate_coefficient_diff[i]*(mean_energy_e - mean_energy_old))
-    else:
-        rate_coefficient_si.append(rate_coefficient[i])
-    i += 1
-
-i = 0
-while i < number_of_species:
-    if mobility_dependence[i] == "Umean":
-        mu_si.append(mu[i] + mu_diff[i]*(mean_energy_e - mean_energy_old))
-    else:
-        mu_si.append(mu[i])
-    i += 1
-
-
-i = 0
-while i < number_of_species:
-    if Diffusion_dependence[i] == "Umean":
-        D_si.append(D[i] + D_diff[i]*(mean_energy_e - mean_energy_old))
-    else:
-        D_si.append(D[i])
-    i += 1
-
+rate_coefficient_si = semi_implicit_coefficients(k_dependence, mean_energy_e, mean_energy_old, rate_coefficient, rate_coefficient_diff)
+mu_si = semi_implicit_coefficients(mobility_dependence, mean_energy_e, mean_energy_old, mu, mu_diff)
+D_si = semi_implicit_coefficients(Diffusion_dependence, mean_energy_e, mean_energy_old, D, D_diff)
 
 i = 0
 while i < len(k_y):

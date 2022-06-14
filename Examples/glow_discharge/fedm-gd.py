@@ -132,9 +132,9 @@ if coordinates == 'cylindrical':
 gap_length = 0.01   # [m]
 wall = 0.01  # [m]
 
-boundaries = [['line', 0.0, 0.0, 0.0, wall],
-                        ['line', gap_length, gap_length, 0.0, wall],
-                        ['line', 0.0, gap_length, 0.0, 0.0],
+boundaries = [['line', 0.0, 0.0, 0.0, wall],\
+                        ['line', gap_length, gap_length, 0.0, wall],\
+                        ['line', 0.0, gap_length, 0.0, 0.0],\
                         ['line', 0.0, gap_length, wall, wall]]  # Defining list of boundaries (line | circle) lying between z0 and z1 and r0 and r1
 number_of_boundaries = len(boundaries)
 
@@ -151,7 +151,7 @@ log('properties', model_logging, gas, model, particle_species_file_names, M, cha
 # ===========================================================================================================================
 # Mesh setup and boundary measure redefinition. Structured mesh is generated using built-in mesh generator
 # ===========================================================================================================================
-mesh_plasma = RectangleMesh(Point(0, 0), Point(wall, gap_length), 20, 50, "crossed")  # Generating structured triangular mesh
+mesh_plasma = RectangleMesh(Point(0, 0), Point(wall, gap_length), 100, 100, "crossed")  # Generating structured triangular mesh
 
 mesh_statistics(mesh_plasma)  # Prints number of elements, minimum and maximum cell diameter
 log('mesh', model_logging, mesh_plasma)  # Writting mesh statistcs to the log file

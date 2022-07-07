@@ -35,10 +35,24 @@ sudo add-apt-repository \
 sudo apt update
 sudo apt-get install docker-ce docker-ce-cli containerd.io
 ```
+
 After installing the Docker, the latest stable FEniCS image (currently FEniCS 2019.1.0) can be run using the following command in the terminal:
 
 ```bash
-sudo docker run -ti -v $(pwd):/home/fenics/shared quay.io/fenicsproject/stable
+sudo docker run -ti \
+    -v $(pwd):/home/fenics/shared \
+    quay.io/fenicsproject/stable
+```
+
+The following steps will also let you run Docker as a non-root user:
+
+```bash
+sudo groupadd docker # create docker group if none exists
+sudo usermod -aG docker $USER # Add self to docker group
+# ... log out and log back in, or call `newgrp docker` ...
+docker run -ti \
+    -v $(pwd):/home/fenics/shared \
+    quay.io/fenicsproject/stable
 ```
 
 Here it is assumed that the FEDM code is located in the subdirectory `fedm` within the current directory. Now, switch to the shared volume mounted in the container to use FEDM:
@@ -64,7 +78,7 @@ fedm
 |   |-- time_of_flight
 |   |   |-- fedm-tof.py
 |   |   |-- README.md
-|-- fedm_modules
+|-- fedm
 |   |-- file_io.py
 |   |-- functions.py
 |   |-- physical_constants.py
@@ -81,7 +95,7 @@ FEDM can be installed within the Docker container using:
 python3 -m pip install --user .
 ```
 
-The directory `Examples` contains the code for the three case studies described in [ADD REFERENCE]. One can execute each example by running the following command in the corresponding directory:
+The directory `Examples` contains the code for the three case studies described in [ADD REFERENCE]. One can execute each example by running the following command in the corresponding directory (you may need to use `sudo`):
 
 ```bash
 python3 fedm-name_of_example.py

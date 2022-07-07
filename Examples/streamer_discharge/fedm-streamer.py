@@ -11,10 +11,9 @@ from timeit import default_timer as timer
 import time
 import os
 import sys
-sys.path.insert(0, "../../fedm_modules")
-from physical_constants import *
-from file_io import *
-from functions import *
+from fedm.physical_constants import *
+from fedm.file_io import *
+from fedm.functions import *
 
 #Optimization parameters
 parameters["form_compiler"]["optimize"]     = True

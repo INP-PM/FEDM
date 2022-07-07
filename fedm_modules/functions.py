@@ -2,10 +2,9 @@
 
 from dolfin import *
 import numpy as np
-from timeit import default_timer as timer
-import time
 import sys
-from physical_constants import *
+
+from .physical_constants import elementary_charge, kB, kB_eV
 
 def approximation_type(approx, number_of_spec, particle_spec = 0, mass = 0, charge = 0):
     """

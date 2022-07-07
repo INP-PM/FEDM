@@ -70,15 +70,24 @@ fedm
 |   |-- physical_constants.py
 |-- LICENCE
 |-- README.md
+|-- setup.py
+|-- setup.cfg
+|-- pyproject.toml
 ```
 
-The directory `Examples` contains the code for the three case studies described in [ADD REFERENCE]. One can execute each example by running the following command in the corresponding directory
+FEDM can be installed within the Docker container using:
+
+```bash
+python3 -m pip install --user .
+```
+
+The directory `Examples` contains the code for the three case studies described in [ADD REFERENCE]. One can execute each example by running the following command in the corresponding directory:
 
 ```bash
 python3 fedm-name_of_example.py
 ```
 
-or in parallel using MPI
+or in parallel using MPI:
 
 ```bash
 mpirun –np 8 python3 fedm-name_of_example.py

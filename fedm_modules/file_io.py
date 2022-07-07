@@ -5,8 +5,6 @@ import numpy as np
 import csv
 import re
 import os
-import gc
-import sys
 
 level = 40 #False | 10 | 13 | 16 | 20 | 30| 40 | 50
 set_log_level(level)

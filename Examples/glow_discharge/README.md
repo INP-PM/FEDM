@@ -4,7 +4,7 @@ In the last case study, the glow discharge in argon at low pressure is modelled.
 
 - the particle species list are read from the input file stored in the `file_input` folder using the `read_speclist()` function, which returns the number of species, their names and corresponding file names
 - the particle properties are read from the input files stored in the `file_input` folder using the `read_particle_properties()` function, which returns the mass and the charge of the particles
-- the number of equations that nedd to be solved are determined based on the used type of approximation in the model (LFA or LMEA) using the `approximation_type()` function
+- the number of equations that nedd to be solved are determined based on the used type of approximation in the model (LFA or LMEA) using the `modify_approximation_vars()` function
 - the output files are created using the `output_files()` function
 - the logging of the particle properties, the simulation conditions, the mesh statistics and the time are done using the `log()` function
 - the reaction matrices used to construct the rates and the source terms are read from the reaction scheme file using the `reaction_matrices()` function

@@ -49,7 +49,8 @@ M, sign = read_particle_properties(particle_prop, model)  # Reading particle pro
 equation_type = ['reaction', 'drift-diffusion-reaction'] # Defining the type of the equation (reaction | diffusion-reaction | drift-diffusion-reaction)
 particle_species_type = ['Ions', 'electrons'] # Defining particle type required for boundary condition: Neutral | Ion | electrons
 
-number_of_species, number_of_equations, particle_species, M, sign = approximation_type(approximation, number_of_species, particle_species, M, sign) # Setting up number of equations for given approximation
+# Setting up number of equations for given approximation
+number_of_species, number_of_equations, particle_species, M, sign = modify_approximation_vars(approximation, number_of_species, particle_species, M, sign)
 charge = [i * elementary_charge for i in sign]
 
 vtkfile_u = output_files('pvd', 'number density', particle_species_type) # Creates list of output files

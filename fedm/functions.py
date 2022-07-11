@@ -1,157 +1,194 @@
 # Fluid modelling functions module
 
+import dolfin as df
 from dolfin import *
+from typing import List, Tuple, Any, Optional
+from pathlib import Path
 import numpy as np
+from numpy import pi
 import sys
 
 from .physical_constants import elementary_charge, kB, kB_eV
 
-def approximation_type(approx, number_of_spec, particle_spec = 0, mass = 0, charge = 0):
+def quoted(strings: List[str]) -> List[str]:
     """
-    Depending on approximation used, the number of equations, charge
-    and mass variables are modified.
+    Utility function, takes a list of strings and returns the same list with each
+    string starting and ending with a single-quote character.
     """
-    if approx == 'LFA':
-        number_of_eq = number_of_spec
-        number_of_spec -= 1
-        particle_spec.remove(particle_spec[0])
-        mass.remove(mass[0])
-        charge.remove(charge[0])
-        return number_of_spec, number_of_eq, particle_spec, mass, charge
-    elif approx == 'LMEA':
-        number_of_eq = number_of_spec + 1
-        return number_of_eq
+    return [f"'{string}'" for string in strings]
 
-def mesh_statistics(mesh):
+def modify_approximation_vars(
+    approximation_type: str,
+    number_of_species: int,
+    particle_species: List[str],
+    masses: List[float],
+    charges: List[float],
+) -> Tuple[int, int, List[str], List[float], List[float]]:
+    """
+    Depending on approximation used, the number of equations, charge and mass variables
+    are modified. Returns number species, number of equations, particle species,
+    masses, and charges. particle_species, masses, and charges may be modified.
+    """
+    approximation_types = ["LFA", "LMEA"]
+    if approximation_type not in approximation_types:
+        raise ValueError(
+            "fedm.modify_approximation_vars: The approximation type "
+            f"'{approximation_type}' is not recognised. Must be one of "
+            f"{', '.join(quoted(approximation_types))}."
+        )
+    # IF LFA, remove the first species from each list
+    if approximation_type == 'LFA':
+        number_of_eq = number_of_species
+        number_of_species -= 1
+        particle_species.pop(0)
+        masses.pop(0)
+        charges.pop(0)
+    # Number of equations should be 1 more than the number of species in each case
+    number_of_eq = number_of_species + 1
+    return number_of_species, number_of_eq, particle_species, masses, charges
+
+
+def mesh_statistics(mesh: df.Mesh) -> None:
     """
     Returns mesh size and, maximum and minimum element size.
     Input is mesh.
     """
-    file_name = 'mesh'
-    file_path = 'output/mesh/' + file_name + '.pvd'
-    vtkfile_mesh = File(file_path)
-    vtkfile_mesh << mesh
+    mesh_dir = Path("output/mesh")
+    vtkfile_mesh = df.File(str(mesh_dir / "mesh.pvd"))
+    vtkfile_mesh.write(mesh)
     n_element = MPI.sum(MPI.comm_world, mesh.num_cells())
     #measures the greatest distance between any two vertices of a cell
     hmax = MPI.max(MPI.comm_world, mesh.hmax())
     #measures the smallest distance between any two vertices of a cell
     hmin = MPI.min(MPI.comm_world, mesh.hmin())
     if(MPI.rank(MPI.comm_world)==0):
-        mesh_information = open('output/mesh/mesh info.txt','w')
-        print("Number of elements is:", int(n_element))
-        print("Maximum element edge length is:", hmax)
-        print("Minimum element edge length is:", hmin)
-        mesh_information.write("Number of elements is: ")
-        print("%.*g" % (5, n_element), file = mesh_information)
-        mesh_information.write("\n" + "Maximum element edge length is: ")
-        print("%.*g" % (5, hmax), file=mesh_information)
-        mesh_information.write("\n" + "Minimum element edge length is: ")
-        print("%.*g" % (5, hmin), file=mesh_information)
-        mesh_information.write("\n")
-        mesh_information.close()
+        info_str = (
+            f"Number of elements is: {int(n_element)}\n"
+            f"Maximum element edge length is: {hmax:.5g}\n"
+            f"Minimum element edge length is: {hmin:.5g}"
+        )
+        print(info_str)
+        with open(mesh_dir / "mesh info.txt",'w') as mesh_information:
+            mesh_information.write(info_str + '\n')
 
-def Marking_boundaries(mesh, boundary = [[]], submesh = 'No'):
+class CircleSubDomain(df.SubDomain):
+
+    def __init__(
+        self,
+        center_z: float,
+        center_r: float,
+        radius: float,
+        gap_length: float,
+        submesh: bool = False,
+        tol : float = 1e-8
+    ):
+        super().__init__()
+        self._center_z = float(center_z)
+        self._center_r = float(center_r)
+        self._radius = float(radius)
+        self._submesh = bool(submesh)
+        self._tol = float(tol)
+
+    def inside(self, x: List[float], on_boundary: bool) -> bool:
+        r, z = x[0], x[1]
+        dist_from_center_squared = (r-self._center_r)**2 + (z-self._center_z)**2
+        within_tol = abs(dist_from_center_squared - self._radius**2) <= self._tol
+        z_correct = z <= 0 if center_z <= 0 else z >= self._gap_length
+        return within_tol and z_correct and (on_boundary or self._submesh)
+
+
+class LineSubDomain(df.SubDomain):
+
+    def __init__(self, r_range: Tuple[float,float], z_range: Tuple[float,float]):
+        super().__init__()
+        self._r_range = r_range
+        self._z_range = z_range
+
+    def inside(self, x: List[float], on_boundary: bool) -> bool:
+        r, z = x[0], x[1]
+        in_r_range = df.between(r, self._r_range)
+        in_z_range = df.between(z, self._z_range)
+        return in_r_range and in_z_range and on_boundary
+
+def Marking_boundaries(
+    mesh: df.Mesh,
+    boundaries: List[List[Any]],
+    submesh: bool = False,
+    gap_length: float = 0.01
+) -> df.MeshFunction:
     """
     Marking boundaries of a provided mesh. Currently, straight-line and circular
-    boundaries are supported. First argument is the mesh, the second
-    argument is a list of boundary properties (boundary type and coordinates).
+    boundaries are supported. First argument is the mesh, the second argument is a list
+    of boundary properties (boundary type and coordinates).
     """
 
-    tol=1e-8
-    class circle(SubDomain):
-        def inside(self, x, on_boundary):
-            if submesh == 'No':
-                if center_z <= 0:
-                    if abs(pow((x[1] - center_z) , 2) + pow(x[0] - center_r, 2) - pow(radius, 2)) <= tol and x[1] <= 0.0 and on_boundary:
-                        return True
-                else:
-                    if abs(pow((x[1] - center_z) , 2) + pow(x[0] - center_r, 2) - pow(radius, 2)) <= tol and x[1] >= gap_length and on_boundary:
-                        return True
-            else:
-                if center_z <= 0:
-                    if abs(pow((x[1] - center_z) , 2) + pow(x[0] - center_r, 2) - pow(radius, 2)) <= tol and x[1] <= 0.0:
-                        return True
-                else:
-                    if abs(pow((x[1] - center_z) , 2) + pow(x[0] - center_r, 2) - pow(radius, 2)) <= tol and x[1] >= gap_length:
-                        return True
+    boundary_markers = df.MeshFunction("size_t", mesh, mesh.topology().dim() - 1, 0)
 
-    class line(SubDomain):
-       def inside(self, x, on_boundary):
-           return between(x[0], (r1, r2)) and between(x[1], (z1, z2)) and on_boundary
+    for idx, boundary in enumerate(boundaries):
+        boundary_type = boundary[0]
 
-    boundary_markers = MeshFunction("size_t", mesh, mesh.topology().dim()-1, 0)
-    i = 0
-    while i < len(boundary):
-        if(MPI.rank(MPI.comm_world)==0):
-            print(boundary[i][0])
-        if boundary[i][0] == 'circle':
-            center_z = boundary[i][1]
-            center_r = boundary[i][2]
-            radius = boundary[i][3]
-            bmark = circle()
-            bmark.mark(boundary_markers, i)
-        elif boundary[i][0] == 'line':
-            z1 = boundary[i][1] - DOLFIN_EPS
-            z2 = boundary[i][2] + DOLFIN_EPS
-            r1 = boundary[i][3] - DOLFIN_EPS
-            r2 = boundary[i][4] + DOLFIN_EPS
-            bmark = line()
-            bmark.mark(boundary_markers, i)
-        i += 1
+        if MPI.rank(MPI.comm_world) == 0:
+            print(boundary_type)
+
+        if boundary_type == 'circle':
+            center_z, center_r, radius = boundary[1:4]
+            bmark = CircleSubDomain(center_z, center_r, radius, gap_length, submesh)
+        elif boundary_type == 'line':
+            eps = df.DOLFIN_EPS
+            z1, z2 = boundary[1] - eps, boundary[2] + eps
+            r1, r2 = boundary[3] - eps, boundary[4] + eps
+            bmark = LineSubDomain((r1, r2), (z1, z2))
+        else:
+            raise ValueError(
+                f"fedm.Marking_boundaries: Invalid boundary_type '{boundary_type}'. "
+                "Possible values are 'circle', 'line'."
+            )
+
+        bmark.mark(boundary_markers, idx)
+
     return boundary_markers
 
-def Mixed_element_list(number_of_equations, P):
+def Mixed_element_list(number_of_equations: int, element: df.FiniteElement) -> List[df.FiniteElement]:
     """
-    Defines list of mixed elements. Input arguments are
-    number of equations and element type.
+    Defines list of mixed elements. Input arguments are number of equations and element
+    type.
     """
-    element_list = []
-    i = 0
-    while i < number_of_equations:
-        element_list.append(P)
-        i += 1
-    return element_list
+    # WARNING: All elements of the list refer to the same object!
+    return [element] * number_of_equations
 
-def Function_space_list(number_of_equations, V):
+def Function_space_list(number_of_equations: int, function_space: df.FunctionSpace) -> List[df.FunctionSpace]:
     """
-    Defines list of function spaces. Input arguments are
-    number of equations and function space.
+    Defines list of function spaces. Input arguments are number of equations and
+    function space.
     """
-    space_list = []
-    i = 0
-    while i < number_of_equations:
-        space_list.append(V)
-        i += 1
-    return space_list
+    # WARNING: All elements of the list refer to the same object!
+    return [function_space] * number_of_equations
 
-def Function_definition(F_space, f_type, eq_number = 1):
+def Function_definition(
+    function_space: df.FunctionSpace,
+    function_type: str, 
+    eq_number: int = 1
+) -> List[Any]:
     """
     Defines list of desired function type (TrialFunction, TestFunction or ordinary Function).
     Input arguments are function space, type of desired function and number of equations,
     where the default value is one.
     """
-    u_temp = []
-    if f_type == 'TrialFunction':
-        i = 0
-        while i < eq_number:
-            temp = TrialFunction(F_space)
-            u_temp.append(temp)
-            i += 1
-    elif f_type == 'TestFunction':
-        i = 0
-        while i < eq_number:
-            temp = TestFunction(F_space)
-            u_temp.append(temp)
-            i += 1
-    elif f_type == 'Function':
-        i = 0
-        while i < eq_number:
-            temp = Function(F_space)
-            u_temp.append(temp)
-            i += 1
-    return u_temp
+    functions = {
+        "TrialFunction" : df.TrialFunction,
+        "TestFunction" : df.TestFunction,
+        "Function" : df.Function,
+    }
+    if function_type not in functions:
+        raise ValueError(
+            f"fedm.Function_definition: Invalid function_type '{function_type}'. "
+            f"Possible values are {', '.join(quoted(Functions))}."
+        )
+    function = functions[function_type]
+    return [function(function_space) for _ in range(eq_number)]
 
-class Problem(NonlinearProblem):
+
+class Problem(df.NonlinearProblem):
     # """
     # Nonlinear problem definition. Input parameters are F - weak form of the equation
     # J - Jacobian and bcs -Dirichlet boundary conditions. The part of code is provided
@@ -162,21 +199,21 @@ class Problem(NonlinearProblem):
         self.bilinear_form = J
         self.linear_form = F
         self.bcs = bcs
-        NonlinearProblem.__init__(self)
+        df.NonlinearProblem.__init__(self)
 
     def F(self, b, x):
-        # """
-        # Linear form assembly
-        # """
-        assemble(self.linear_form, tensor=b)
+        """
+        Linear form assembly
+        """
+        df.assemble(self.linear_form, tensor=b)
         for bc in self.bcs:
             bc.apply(b, x)
 
     def J(self, A, x):
-        # """
-        # Bilinear form assembly
-        # """
-        assemble(self.bilinear_form, tensor=A)
+        """
+        Bilinear form assembly
+        """
+        df.assemble(self.bilinear_form, tensor=A)
         for bc in self.bcs:
             bc.apply(A)
 
@@ -184,13 +221,13 @@ def Max(a, b):
     """
     Returns maximum value of a and b.
     """
-    return (a+b+abs(a-b))/Constant(2.0)
+    return (a + b + abs(a - b)) / df.Constant(2.0)
 
 def Min(a, b):
     """
     Returns minimum value of a and b.
     """
-    return (a+b-abs(a-b))/Constant(2.0)
+    return (a + b - abs(a - b)) / df.Constant(2.0)
 
 def Flux(sign, u, D, mu, E):
     """
@@ -198,7 +235,7 @@ def Flux(sign, u, D, mu, E):
     Input arguments are particle charge, number density,
     diffusion coefficient, mobility and electric field.
     """
-    return -grad(D*u) + sign*mu*E*u
+    return -df.grad(D*u) + sign*mu*E*u
 
 def Flux_log(sign, u, D, mu, E):
     """
@@ -206,83 +243,244 @@ def Flux_log(sign, u, D, mu, E):
     Input arguments are particle charge, number density,
     Diffusion coefficient, mobility and electric field.
     """
-    return -grad(D*exp(u)) + sign*mu*E*exp(u)
+    return -df.grad(D*df.exp(u)) + sign*mu*E*df.exp(u)
 
-def weak_form_balance_equation_log_representation(equation_type, dt, dt_old, dx, u, u_old, u_old1, v, f, Gamma, r = 0.5/pi, D = 0):
-    """
-    Returns the weak form of the particle balance equations for logarithmic representation. Input
-    arguments are equation type (reaction | diffusion-reaction | drift-diffusion-reaction),
-    current time-step size, old time-step size, dV, trial function, value of variable in current
-    and previous time step, test function, source term, particle flux, r coordinate and
-    diffusion coefficient, which is only required for the diffusion equation.
-    """
-    if (equation_type == 'reaction'):
-        return 2.0*pi*exp(u)*((((1.0+2.0*dt/dt_old)/(1.0+dt/dt_old))*(u - (pow(1.0+dt/dt_old, 2.0)/(1.0+2.0*dt/dt_old))*u_old\
-         + (pow(dt/dt_old, 2.0)/(1.0+2.0*dt/dt_old))*u_old1))*v/dt)*r*dx - 2.0*pi*f*v*r*dx
-    elif (equation_type == 'diffusion-reaction'):
-        return 2.0*pi*exp(u)*((((1.0+2.0*dt/dt_old)/(1.0+dt/dt_old))*(u - (pow(1.0+dt/dt_old, 2.0)/(1.0+2.0*dt/dt_old))*u_old\
-         + (pow(dt/dt_old, 2.0)/(1.0+2.0*dt/dt_old))*u_old1))*v/dt)*r*dx - 2.0*pi*dot(-grad(D*exp(u)), grad(v))*r*dx - 2.0*pi*f*v*r*dx
-    elif (equation_type == 'drift-diffusion-reaction'):
-        return 2.0*pi*exp(u)*((((1.0+2.0*dt/dt_old)/(1.0+dt/dt_old))*(u - (pow(1.0+dt/dt_old, 2.0)/(1.0+2.0*dt/dt_old))*u_old\
-         + (pow(dt/dt_old, 2.0)/(1.0+2.0*dt/dt_old))*u_old1))*v/dt)*r*dx - 2.0*pi*dot(Gamma, grad(v))*r*dx - 2.0*pi*f*v*r*dx
 
-def weak_form_balance_equation(equation_type, dt, dt_old, dx, u, u_old, u_old1, v, f, Gamma, r = 0.5/pi, D = 0):
+def weak_form_balance_equation(
+    equation_type: str, 
+    dt: df.Expression, 
+    dt_old: df.Expression,
+    dx: df.Measure,  # Can use built-in dolfin.dx here
+    u: Any, # obtain by indexing result of df.TrialFunction
+    u_old: Any, # obtain by indexing result of df.Function
+    u_old1: Any, # obtain by indexing result of df.Function
+    v: Any, # obtain by indexing result of df.TestFunctions
+    f: df.Function, # obtain by indexing result of df.Function_definition
+    Gamma: df.Function, # obtain by indexing result of df.Function_definition
+    r: float = 0.5 / df.pi,
+    D: Optional[df.Function] = None, # get by indexing result of df.Function_definition
+    log_representation: bool = False,
+) -> df.Form:
     """
-    Returns the weak form of particle balance equations. Input arguments are
-    equation type (reaction | diffusion-reaction | drift-diffusion-reaction),
-    current time step size, old time step size, dV, trial function, value of
-    variable in current and previous time step, test function, source term,
-    particle flux, r coordinate and diffusion coefficient, which is only
-    required for diffusion equation.
-    """
-    if (equation_type == 'reaction'):
-        return 2.0*pi*((((1.0+2.0*dt/dt_old)/(1.0+dt/dt_old))*(u - (pow(1.0+dt/dt_old, 2.0)/(1.0+2.0*dt/dt_old))*u_old\
-         + (pow(dt/dt_old, 2.0)/(1.0+2.0*dt/dt_old))*u_old1))*v/dt)*r*dx - 2.0*pi*f*v*r*dx
-    elif (equation_type == 'diffusion-reaction'):
-        return 2.0*pi*((((1.0+2.0*dt/dt_old)/(1.0+dt/dt_old))*(u - (pow(1.0+dt/dt_old, 2.0)/(1.0+2.0*dt/dt_old))*u_old\
-         + (pow(dt/dt_old, 2.0)/(1.0+2.0*dt/dt_old))*u_old1))*v/dt)*r*dx - 2.0*pi*dot(-grad(D*u), grad(v))*r*dx - 2.0*pi*f*v*r*dx
-    elif (equation_type == 'drift-diffusion-reaction'):
-        return 2.0*pi*((((1.0+2.0*dt/dt_old)/(1.0+dt/dt_old))*(u - (pow(1.0+dt/dt_old, 2.0)/(1.0+2.0*dt/dt_old))*u_old\
-         + (pow(dt/dt_old, 2.0)/(1.0+2.0*dt/dt_old))*u_old1))*v/dt)*r*dx - 2.0*pi*dot(Gamma, grad(v))*r*dx - 2.0*pi*f*v*r*dx
+    Returns the weak form of the particle balance equations.
 
-def weak_form_Poisson_equation(dx, u, v, f, r = 0.5/pi):
-    """
-    Returns a weak form of Poisson equation. Input arguments are dV,
-    trial function, test function, surce term and r coordinate.
-    """
-    return 2.0*pi*inner(grad(u), grad(v))*r*dx - 2.0*pi*f*v*r*dx
+    Parameters
+    ----------
+    equation_type : str
+        Type of equation to solve. Options are 'reaction', 'diffusion-reaction', or
+        'drift-diffusion-reaction'.
+    dt : df.Expression
+        Current time-step size
+    dt_old : df.Expression
+        Previous time-step size
+    dx : df.Measure
+        dV, used to build integrals. Recommended to use dolfin.dx.
+    u
+        Trial function
+    u_old
+        Value of variable in current time step
+    u_old1
+        Value of variable in previous time step
+    v
+        Test function
+    f : df.Function
+        Source term
+    Gamma : df.Function
+        particle flux
+    r : float, default 0.5 / pi
+        r coordinate
+    D : df.Function, default None
+        diffusion coefficient, only required for the diffusion equation.
+    log_representation : bool, default False
+        Use logarithmic representation.
 
-def Boundary_flux(bc_type, type_of_equation, particle_type, sign, mu, E, normal, u, gamma, v, ds_temp, r = 0.5/pi, vth = 0.0, ref = 1.0, Ion_flux = 0.0):
+    Returns
+    -------
+    df.Form
+
+    Raises
+    ------
+    ValueError
+        If equation_type is not recognised, or if D is not supplied when solving the
+        diffusion-reaction equation.
+    """
+    equation_types = ["reaction", "diffusion-reaction", "drift-diffusion-reaction"]
+    if equation_type not in equation_types:
+        raise ValueError(
+            "fedm.weak_form_balance_equation_log_representation: The equation type "
+            f"'{equation_type}' is not recognised. Must be one of "
+            f"{', '.join(quoted(equation_types))}."
+        )
+    if equation_type == 'diffusion-reaction' and D is None:
+        raise ValueError(
+            "fedm.weak_form_balance_equation_log_representation: When 'equation_type' "
+            "is diffusion-reaction, must also supply the diffusion coefficient 'D'."
+        )
+    # tr = timestep_ratio
+    tr = dt / dt_old
+    trp1 = tr + 1.0
+    tr2p1 = 2.0 * tr + 1.0
+    # If logarithmic, we include a factor of exp(u) in the integral
+    expu_or_1 = df.exp(u) if log_representation else 1.0
+    # Standard part
+    result = v * expu_or_1 * (
+        ( u * tr2p1 - u_old * trp1**2.0 + u_old1 * tr**2.0) / (trp1 * dt)
+    )
+    # Source terms
+    result -= v * f
+    # Diffusion terms
+    if equation_type == "diffusion-reaction":
+        expu_or_u = df.exp(u) if log_representation else u
+        result -= df.dot(-df.grad(D * expu_or_u), df.grad(v))
+    if equation_type == "drift-diffusion-reaction":
+        result -= df.dot(Gamma, df.grad(v))
+    # Return with integral bits
+    return 2.0 * df.pi * r * result * dx
+
+def weak_form_balance_equation_log_representation(*args, **kwargs) -> df.Form:
+    """
+    Convenience function, calls weak_form_balance_equation with log_representation set
+    to True.
+    """
+    return weak_form_balance_equation(*args, **kwargs, log_representation=True)
+
+def weak_form_Poisson_equation(dx, u, v, f, r = 0.5 / df.pi) -> df.Form:
+    """
+    Returns a weak form of Poisson equation. Input arguments are dV, trial function,
+    test function, source term and r coordinate.
+
+    Parameters
+    ----------
+    dx : df.Measure
+        dV, used to build integrals. Recommended to use dolfin.dx.
+    u
+        Trial function
+    v
+        Test function
+    f
+        Source term
+    r
+        r coordinate
+
+    Returns
+    -------
+    df.Form
+    """
+    return 2.0 * df.pi * r * (df.inner(df.grad(u), df.grad(v)) - f * v) * dx
+
+def Boundary_flux(
+    bc_type: str,
+    equation_type: str,
+    particle_type: str,
+    sign: float,
+    mu, # TODO types unknown
+    E,
+    normal,
+    u,
+    gamma,
+    v,
+    ds_temp,
+    r: float = 0.5/pi,
+    vth: float = 0.0,
+    ref: float = 1.0,
+    Ion_flux: float = 0.0,
+):
     """
     Function defines boundary conditions for different equations.
-    Input arguments are boundary condition type, type of equation,
-    type of particle, particle charge sign, mobility, electric field,
-    normal, trial function, secondary electron emmision coefficient,
-    test function, ds,  r coordinate, thermal velocity, reflection
-    coefficient for specified particle species and boundary, and
-    flux of ions.
+
+    Parameters
+    ----------
+    bc_type : str
+        Type of boundary condition. Options are 'zero flux', 'flux source' or 'Neumann'
+    equation_type : str
+        Choices are 'reaction', 'diffusion-reaction' or 'drift-diffusion-reaction'
+    particle_type : str
+        Choices are 'Heavy' or 'electrons'.
+    sign: float
+        Particle charge sign
+    mu
+        Mobility
+    E
+        Electric field
+    normal
+        Normal
+    u
+        Trial function
+    gamma
+        Secondary electron emission coefficient
+    v
+        Test function
+    ds_temp : df.Measure
+        ds, surface element used to build integrals (??)
+    r: float, default 0.5/pi
+        r coordinate
+    vth: float, default 0.0
+        Thermal velocity
+    ref: float, default 1.0
+        Reflection coefficient for specified particles species and boundary.
+    Ion_flux: float, default 0.0
+        Flux of ions
+
+    Returns
+    -------
+    df.Form
+        If bc_type is 'flux source' and there is a diffusion term in equation_type.
+        Also if the user combines Neumann boundaries with a drift-diffusion-reaction
+        equation.
+    float
+        Otherwise.
+
+    Raises
+    ------
+    ValueError
+        If bc_type is not recognised. If bc_type is not 'zero flux', also raised if
+        equation_type is not recognised. Furthermore, if equation_type is
+        'drift-diffusion-reaction', raises if particle_type is not recognised.
     """
-    BF = 0.0
-    if bc_type == 'zero flux':
-        BF = 0.0
-    elif bc_type == 'flux source':
-        if type_of_equation == 'reaction':
-            BF = 0.0
-        elif type_of_equation == 'diffusion-reaction':
-            BF = 2*pi*((1.0-ref)/(1.0+ref))*(0.5*vth *exp(u))*v*r*ds_temp
-        elif type_of_equation == 'drift-diffusion-reaction':
-            if particle_type  == 'Heavy':
-                BF = 2*pi*((1.0-ref)/(1.0+ref))*(0.5*vth*exp(u) + abs(sign*mu * dot(E, normal)*exp(u)))*v*r*ds_temp
-            elif particle_type == 'electrons':
-                BF = 2*pi*(((1.0-ref)/(1.0+ref))*(0.5*vth*exp(u) + abs(mu * dot(E, normal)*exp(u))))*v*r*ds_temp - 2.0*pi*2.0/(1.0+ref)*gamma*Ion_flux*v*r*ds_temp
-    elif bc_type == 'Neumann':
-        if type_of_equation == 'reaction':
-            BF = 0.0
-        elif type_of_equation == 'diffusion-reaction':
-            BF = 0.0
-        elif type_of_equation == 'drift-diffusion-reaction':
-            BF = 2.0*pi*dot(sign*mu * E, normal)*exp(u)*v*r*ds
-    return BF
+    bc_types = ["zero flux", "flux source", "Neumann"]
+    equation_types = ["reaction", "diffusion-reaction", "drift-diffusion-reaction"]
+    particle_types = ["Heavy", "electrons"]
+
+    # If provided bc_type has an underscore instead of a space, correct it
+    bc_type = bc_type.replace('_', ' ')
+
+    if bc_type not in bc_types:
+        raise ValueError(
+            f"fedm.Boundary_flux: boundary condition type '{bc_type}' not recognised. "
+            f"Must be one of {', '.join(quoted(bc_types))}."
+        )
+
+    # Only raise error on bad 'equation_type' if the value is needed
+    if bc_type != "zero flux" and equation_type not in equation_types:
+        raise ValueError(
+            f"fedm.Boundary_flux: equation type '{equation_type}' not recognised. "
+            f"Must be one of {', '.join(quoted(equation_types))}."
+        )
+
+    # Only raise error on bad 'particle_type' if the value is needed
+    if bc_type == "flux source" and equation_type == "diffusion-reaction" and particle_type not in particle_types:
+        raise ValueError(
+            f"fedm.Boundary_flux: particle type '{particle_type}' not recognised. "
+            f"Must be one of {', '.join(quoted(particle_types))}."
+        )
+
+    if bc_type == 'flux source' and equation_type != 'reaction':
+        result = ((1.0 - ref) / (1.0 + ref))
+        if equation_type == 'diffusion-reaction':
+            result *= 0.5 * vth * df.exp(u)
+        if equation_type == 'drift-diffusion-reaction' and particle_type == 'Heavy':
+            result *= (0.5 * vth + abs(sign * mu * df.dot(E, normal)))* df.exp(u)
+        if equation_type == 'drift-diffusion-reaction' and particle_type == 'electrons':
+            result *= (0.5 * vth + abs(mu * df.dot(E, normal)))* df.exp(u)
+            result -= 2.0 * gamma * Ion_flux / (1.0 + ref)
+        return 2.0 * df.pi * result * v * r * ds_temp
+
+    if bc_type == 'Neumann' and equation_type == 'drift-diffusion-reaction':
+        # Note: Here we use the built-in dolfin.ds, not the ds_temp passed in.
+        return 2.0 * df.pi * df.dot(sign * mu * E, normal) * df.exp(u) * v * r * df.ds
+
+    # default, returned if bc_type is 'zero_flux', or if no other conditions are met.
+    return 0.0
 
 def Transport_coefficient_interpolation(status, dependence, N0, Tgas, k_coeff, kx, ky, energy, redfield, mu = 0.0, Te = 0):
     """

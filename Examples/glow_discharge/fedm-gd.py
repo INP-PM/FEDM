@@ -85,7 +85,8 @@ while i < len(k_y):
         k_diff.append(0.0)
     i += 1
 
-number_of_equations = approximation_type(approximation, number_of_species)
+# Setting up number of equations for given approximation
+number_of_species, number_of_equations, particle_species, M, sign = modify_approximation_vars(approximation, number_of_species, particle_species, M, sign)
 
 xdmf_file_u = output_files('xdmf', 'number density', particle_species_file_names)  # Creating list of output files
 vtkfile_Phi = output_files('pvd', 'potential', ['Phi'])  # Creating list of output files

@@ -38,7 +38,6 @@ def modify_approximation_vars(
         )
     # IF LFA, remove the first species from each list
     if approximation_type == 'LFA':
-        number_of_eq = number_of_species
         number_of_species -= 1
         particle_species.pop(0)
         masses.pop(0)
@@ -235,7 +234,7 @@ def Flux(sign, u, D, mu, E):
     Input arguments are particle charge, number density,
     diffusion coefficient, mobility and electric field.
     """
-    return -df.grad(D*u) + sign*mu*E*u
+    return -df.grad(D * u) + sign * mu * E * u
 
 def Flux_log(sign, u, D, mu, E):
     """
@@ -243,7 +242,7 @@ def Flux_log(sign, u, D, mu, E):
     Input arguments are particle charge, number density,
     Diffusion coefficient, mobility and electric field.
     """
-    return -df.grad(D*df.exp(u)) + sign*mu*E*df.exp(u)
+    return -df.grad(D * df.exp(u)) + sign * mu * E * df.exp(u)
 
 
 def weak_form_balance_equation(

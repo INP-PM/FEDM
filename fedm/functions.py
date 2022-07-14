@@ -1,14 +1,23 @@
 # Fluid modelling functions module
 
-import dolfin as df
-from dolfin import *
-from typing import List, Tuple, Any, Optional
+import warnings
+from typing import List, Tuple, Any, Optional, Union
 from pathlib import Path
+from io import TextIOWrapper
+
+import dolfin as df
 import numpy as np
-from numpy import pi
-import sys
 
 from .physical_constants import elementary_charge, kB, kB_eV
+
+
+def print_rank_0(*args, **kwargs):
+    """
+    Utility function, print to terminal if MPI rank 0, otherwise do nothing.
+    """
+    if df.MPI.rank(df.MPI.comm_world) == 0:
+        print(*args, **kwargs)
+
 
 def quoted(strings: List[str]) -> List[str]:
     """
@@ -16,6 +25,7 @@ def quoted(strings: List[str]) -> List[str]:
     string starting and ending with a single-quote character.
     """
     return [f"'{string}'" for string in strings]
+
 
 def modify_approximation_vars(
     approximation_type: str,
@@ -37,7 +47,7 @@ def modify_approximation_vars(
             f"{', '.join(quoted(approximation_types))}."
         )
     # IF LFA, remove the first species from each list
-    if approximation_type == 'LFA':
+    if approximation_type == "LFA":
         number_of_species -= 1
         particle_species.pop(0)
         masses.pop(0)
@@ -55,23 +65,23 @@ def mesh_statistics(mesh: df.Mesh) -> None:
     mesh_dir = Path("output/mesh")
     vtkfile_mesh = df.File(str(mesh_dir / "mesh.pvd"))
     vtkfile_mesh.write(mesh)
-    n_element = MPI.sum(MPI.comm_world, mesh.num_cells())
-    #measures the greatest distance between any two vertices of a cell
-    hmax = MPI.max(MPI.comm_world, mesh.hmax())
-    #measures the smallest distance between any two vertices of a cell
-    hmin = MPI.min(MPI.comm_world, mesh.hmin())
-    if(MPI.rank(MPI.comm_world)==0):
+    n_element = df.MPI.sum(df.MPI.comm_world, mesh.num_cells())
+    # measures the greatest distance between any two vertices of a cell
+    hmax = df.MPI.max(df.MPI.comm_world, mesh.hmax())
+    # measures the smallest distance between any two vertices of a cell
+    hmin = df.MPI.min(df.MPI.comm_world, mesh.hmin())
+    if df.MPI.rank(df.MPI.comm_world) == 0:
         info_str = (
             f"Number of elements is: {int(n_element)}\n"
             f"Maximum element edge length is: {hmax:.5g}\n"
             f"Minimum element edge length is: {hmin:.5g}"
         )
         print(info_str)
-        with open(mesh_dir / "mesh info.txt",'w') as mesh_information:
-            mesh_information.write(info_str + '\n')
+        with open(mesh_dir / "mesh info.txt", "w") as mesh_information:
+            mesh_information.write(info_str + "\n")
+
 
 class CircleSubDomain(df.SubDomain):
-
     def __init__(
         self,
         center_z: float,
@@ -79,7 +89,7 @@ class CircleSubDomain(df.SubDomain):
         radius: float,
         gap_length: float,
         submesh: bool = False,
-        tol : float = 1e-8
+        tol: float = 1e-8,
     ):
         super().__init__()
         self._center_z = float(center_z)
@@ -90,15 +100,14 @@ class CircleSubDomain(df.SubDomain):
 
     def inside(self, x: List[float], on_boundary: bool) -> bool:
         r, z = x[0], x[1]
-        dist_from_center_squared = (r-self._center_r)**2 + (z-self._center_z)**2
+        dist_from_center_squared = (r - self._center_r) ** 2 + (z - self._center_z) ** 2
         within_tol = abs(dist_from_center_squared - self._radius**2) <= self._tol
-        z_correct = z <= 0 if center_z <= 0 else z >= self._gap_length
+        z_correct = z <= 0 if self._center_z <= 0 else z >= self._gap_length
         return within_tol and z_correct and (on_boundary or self._submesh)
 
 
 class LineSubDomain(df.SubDomain):
-
-    def __init__(self, r_range: Tuple[float,float], z_range: Tuple[float,float]):
+    def __init__(self, r_range: Tuple[float, float], z_range: Tuple[float, float]):
         super().__init__()
         self._r_range = r_range
         self._z_range = z_range
@@ -109,11 +118,12 @@ class LineSubDomain(df.SubDomain):
         in_z_range = df.between(z, self._z_range)
         return in_r_range and in_z_range and on_boundary
 
+
 def Marking_boundaries(
     mesh: df.Mesh,
     boundaries: List[List[Any]],
     submesh: bool = False,
-    gap_length: float = 0.01
+    gap_length: float = 0.01,
 ) -> df.MeshFunction:
     """
     Marking boundaries of a provided mesh. Currently, straight-line and circular
@@ -126,13 +136,12 @@ def Marking_boundaries(
     for idx, boundary in enumerate(boundaries):
         boundary_type = boundary[0]
 
-        if MPI.rank(MPI.comm_world) == 0:
-            print(boundary_type)
+        print_rank_0(boundary_type)
 
-        if boundary_type == 'circle':
+        if boundary_type == "circle":
             center_z, center_r, radius = boundary[1:4]
             bmark = CircleSubDomain(center_z, center_r, radius, gap_length, submesh)
-        elif boundary_type == 'line':
+        elif boundary_type == "line":
             eps = df.DOLFIN_EPS
             z1, z2 = boundary[1] - eps, boundary[2] + eps
             r1, r2 = boundary[3] - eps, boundary[4] + eps
@@ -147,7 +156,10 @@ def Marking_boundaries(
 
     return boundary_markers
 
-def Mixed_element_list(number_of_equations: int, element: df.FiniteElement) -> List[df.FiniteElement]:
+
+def Mixed_element_list(
+    number_of_equations: int, element: df.FiniteElement
+) -> List[df.FiniteElement]:
     """
     Defines list of mixed elements. Input arguments are number of equations and element
     type.
@@ -155,7 +167,10 @@ def Mixed_element_list(number_of_equations: int, element: df.FiniteElement) -> L
     # WARNING: All elements of the list refer to the same object!
     return [element] * number_of_equations
 
-def Function_space_list(number_of_equations: int, function_space: df.FunctionSpace) -> List[df.FunctionSpace]:
+
+def Function_space_list(
+    number_of_equations: int, function_space: df.FunctionSpace
+) -> List[df.FunctionSpace]:
     """
     Defines list of function spaces. Input arguments are number of equations and
     function space.
@@ -163,37 +178,37 @@ def Function_space_list(number_of_equations: int, function_space: df.FunctionSpa
     # WARNING: All elements of the list refer to the same object!
     return [function_space] * number_of_equations
 
+
 def Function_definition(
-    function_space: df.FunctionSpace,
-    function_type: str, 
-    eq_number: int = 1
+    function_space: df.FunctionSpace, function_type: str, eq_number: int = 1
 ) -> List[Any]:
     """
-    Defines list of desired function type (TrialFunction, TestFunction or ordinary Function).
-    Input arguments are function space, type of desired function and number of equations,
-    where the default value is one.
+    Defines list of desired function type (TrialFunction, TestFunction or ordinary
+    Function). Input arguments are function space, type of desired function and number
+    of equations, where the default value is one.
     """
     functions = {
-        "TrialFunction" : df.TrialFunction,
-        "TestFunction" : df.TestFunction,
-        "Function" : df.Function,
+        "TrialFunction": df.TrialFunction,
+        "TestFunction": df.TestFunction,
+        "Function": df.Function,
     }
     if function_type not in functions:
         raise ValueError(
             f"fedm.Function_definition: Invalid function_type '{function_type}'. "
-            f"Possible values are {', '.join(quoted(Functions))}."
+            f"Possible values are {', '.join(quoted(functions))}."
         )
     function = functions[function_type]
     return [function(function_space) for _ in range(eq_number)]
 
 
 class Problem(df.NonlinearProblem):
-    # """
-    # Nonlinear problem definition. Input parameters are F - weak form of the equation
-    # J - Jacobian and bcs -Dirichlet boundary conditions. The part of code is provided
-    # by user Nate Sime from FEniCS forum:
-    # https://fenicsproject.discourse.group/t/set-krylov-linear-solver-paramters-in-newton-solver/1070/3
-    # """
+    """
+    Nonlinear problem definition. Input parameters are F - weak form of the equation
+    J - Jacobian and bcs -Dirichlet boundary conditions. The part of code is provided
+    by user Nate Sime from FEniCS forum:
+    https://fenicsproject.discourse.group/t/set-krylov-linear-solver-paramters-in-newton-solver/1070/3
+    """
+
     def __init__(self, J, F, bcs):
         self.bilinear_form = J
         self.linear_form = F
@@ -216,17 +231,20 @@ class Problem(df.NonlinearProblem):
         for bc in self.bcs:
             bc.apply(A)
 
+
 def Max(a, b):
     """
     Returns maximum value of a and b.
     """
     return (a + b + abs(a - b)) / df.Constant(2.0)
 
+
 def Min(a, b):
     """
     Returns minimum value of a and b.
     """
     return (a + b - abs(a - b)) / df.Constant(2.0)
+
 
 def Flux(sign, u, D, mu, E):
     """
@@ -235,6 +253,7 @@ def Flux(sign, u, D, mu, E):
     diffusion coefficient, mobility and electric field.
     """
     return -df.grad(D * u) + sign * mu * E * u
+
 
 def Flux_log(sign, u, D, mu, E):
     """
@@ -246,22 +265,57 @@ def Flux_log(sign, u, D, mu, E):
 
 
 def weak_form_balance_equation(
-    equation_type: str, 
-    dt: df.Expression, 
+    equation_type: str,
+    dt: df.Expression,
     dt_old: df.Expression,
     dx: df.Measure,  # Can use built-in dolfin.dx here
-    u: Any, # obtain by indexing result of df.TrialFunction
-    u_old: Any, # obtain by indexing result of df.Function
-    u_old1: Any, # obtain by indexing result of df.Function
-    v: Any, # obtain by indexing result of df.TestFunctions
-    f: df.Function, # obtain by indexing result of df.Function_definition
-    Gamma: df.Function, # obtain by indexing result of df.Function_definition
+    u: Any,  # obtain by indexing result of df.TrialFunction
+    u_old: Any,  # obtain by indexing result of df.Function
+    u_old1: Any,  # obtain by indexing result of df.Function
+    v: Any,  # obtain by indexing result of df.TestFunctions
+    f: df.Function,  # obtain by indexing result of df.Function_definition
+    Gamma: df.Function,  # obtain by indexing result of df.Function_definition
     r: float = 0.5 / df.pi,
-    D: Optional[df.Function] = None, # get by indexing result of df.Function_definition
+    D: Optional[df.Function] = None,  # get by indexing result of df.Function_definition
     log_representation: bool = False,
 ) -> df.Form:
     """
     Returns the weak form of the particle balance equations.
+
+    If log_representation is True, solves:
+
+    2.0 * pi * exp(u) * (
+        (
+            (1.0 + 2.0 * dt / dt_old) / (1.0 + dt / dt_old)
+        )*(
+            u - u_old * pow(1.0 + dt / dt_old, 2.0) / (1.0 + 2.0 * dt / dt_old)
+              + u_old1 * pow(dt / dt_old, 2.0) / (1.0 + 2.0 * dt / dt_old)
+        )
+    ) * (v/dt) * r * dx
+
+    Otherwise, solves:
+
+    2.0 * pi * (
+        (
+            (1.0 + 2.0 * dt / dt_old) / (1.0 + dt / dt_old)
+        )*(
+            u - u_old * pow(1.0 + dt / dt_old, 2.0) / (1.0 + 2.0 * dt / dt_old)
+              + u_old1 * pow(dt / dt_old, 2.0) / (1.0 + 2.0 * dt / dt_old)
+        )
+    ) * (v/dt) * r * dx
+
+    If solving diffusion-reaction equation, also includes the term:
+
+    -2.0 * pi * dot(-grad(D * exp(u)), grad(v)) * r * dx     (log representation)
+    -2.0 * pi * dot(-grad(D * u), grad(v)) * r * dx          (standard)
+
+    If solving drift-diffusion-reaction, instead includes the term:
+
+    -2.0 * pi * dot(Gamma, grad(v)) * r * dx
+
+    In all cases, also includes the source term:
+
+    - 2.0 * pi * f * v * r * dx
 
     Parameters
     ----------
@@ -310,7 +364,7 @@ def weak_form_balance_equation(
             f"'{equation_type}' is not recognised. Must be one of "
             f"{', '.join(quoted(equation_types))}."
         )
-    if equation_type == 'diffusion-reaction' and D is None:
+    if equation_type == "diffusion-reaction" and D is None:
         raise ValueError(
             "fedm.weak_form_balance_equation_log_representation: When 'equation_type' "
             "is diffusion-reaction, must also supply the diffusion coefficient 'D'."
@@ -322,9 +376,8 @@ def weak_form_balance_equation(
     # If logarithmic, we include a factor of exp(u) in the integral
     expu_or_1 = df.exp(u) if log_representation else 1.0
     # Standard part
-    result = v * expu_or_1 * (
-        ( u * tr2p1 - u_old * trp1**2.0 + u_old1 * tr**2.0) / (trp1 * dt)
-    )
+    result = expu_or_1 * (u * tr2p1 - u_old * trp1**2.0 + u_old1 * tr**2.0) / trp1
+    result *= v / dt
     # Source terms
     result -= v * f
     # Diffusion terms
@@ -336,6 +389,7 @@ def weak_form_balance_equation(
     # Return with integral bits
     return 2.0 * df.pi * r * result * dx
 
+
 def weak_form_balance_equation_log_representation(*args, **kwargs) -> df.Form:
     """
     Convenience function, calls weak_form_balance_equation with log_representation set
@@ -343,7 +397,8 @@ def weak_form_balance_equation_log_representation(*args, **kwargs) -> df.Form:
     """
     return weak_form_balance_equation(*args, **kwargs, log_representation=True)
 
-def weak_form_Poisson_equation(dx, u, v, f, r = 0.5 / df.pi) -> df.Form:
+
+def weak_form_Poisson_equation(dx, u, v, f, r=0.5 / df.pi) -> df.Form:
     """
     Returns a weak form of Poisson equation. Input arguments are dV, trial function,
     test function, source term and r coordinate.
@@ -367,19 +422,20 @@ def weak_form_Poisson_equation(dx, u, v, f, r = 0.5 / df.pi) -> df.Form:
     """
     return 2.0 * df.pi * r * (df.inner(df.grad(u), df.grad(v)) - f * v) * dx
 
+
 def Boundary_flux(
     bc_type: str,
     equation_type: str,
     particle_type: str,
     sign: float,
-    mu, # TODO types unknown
-    E,
-    normal,
-    u,
-    gamma,
-    v,
-    ds_temp,
-    r: float = 0.5/pi,
+    mu: Any,
+    E: Any,
+    normal: Any,
+    u: Any,
+    gamma: Any,
+    v: Any,
+    ds_temp: df.Measure,
+    r: float = 0.5 / df.pi,
     vth: float = 0.0,
     ref: float = 1.0,
     Ion_flux: float = 0.0,
@@ -389,7 +445,6 @@ def Boundary_flux(
 
     Parameters
     ----------
-    bc_type : str
         Type of boundary condition. Options are 'zero flux', 'flux source' or 'Neumann'
     equation_type : str
         Choices are 'reaction', 'diffusion-reaction' or 'drift-diffusion-reaction'
@@ -397,12 +452,12 @@ def Boundary_flux(
         Choices are 'Heavy' or 'electrons'.
     sign: float
         Particle charge sign
-    mu
+    mu: df.Function
         Mobility
     E
-        Electric field
+        Electric field, Dolfin ComponentTensor
     normal
-        Normal
+        Dolfin FacetNormal
     u
         Trial function
     gamma
@@ -441,7 +496,9 @@ def Boundary_flux(
     particle_types = ["Heavy", "electrons"]
 
     # If provided bc_type has an underscore instead of a space, correct it
-    bc_type = bc_type.replace('_', ' ')
+    if "_" in bc_type:
+        warnings.warn("fedm.BoundaryFlux: bc_type should have spaces, not underscores")
+        bc_type = bc_type.replace("_", " ")
 
     if bc_type not in bc_types:
         raise ValueError(
@@ -457,448 +514,672 @@ def Boundary_flux(
         )
 
     # Only raise error on bad 'particle_type' if the value is needed
-    if bc_type == "flux source" and equation_type == "diffusion-reaction" and particle_type not in particle_types:
+    if (
+        bc_type == "flux source"
+        and equation_type == "diffusion-reaction"
+        and particle_type not in particle_types
+    ):
         raise ValueError(
             f"fedm.Boundary_flux: particle type '{particle_type}' not recognised. "
             f"Must be one of {', '.join(quoted(particle_types))}."
         )
 
-    if bc_type == 'flux source' and equation_type != 'reaction':
-        result = ((1.0 - ref) / (1.0 + ref))
-        if equation_type == 'diffusion-reaction':
+    if bc_type == "flux source" and equation_type != "reaction":
+        result = (1.0 - ref) / (1.0 + ref)
+        if equation_type == "diffusion-reaction":
             result *= 0.5 * vth * df.exp(u)
-        if equation_type == 'drift-diffusion-reaction' and particle_type == 'Heavy':
-            result *= (0.5 * vth + abs(sign * mu * df.dot(E, normal)))* df.exp(u)
-        if equation_type == 'drift-diffusion-reaction' and particle_type == 'electrons':
-            result *= (0.5 * vth + abs(mu * df.dot(E, normal)))* df.exp(u)
-            result -= 2.0 * gamma * Ion_flux / (1.0 + ref)
+        if equation_type == "drift-diffusion-reaction":
+            result *= (0.5 * vth + abs(sign * mu * df.dot(E, normal))) * df.exp(u)
+            if particle_type == "electrons":
+                result -= 2.0 * gamma * Ion_flux / (1.0 + ref)
         return 2.0 * df.pi * result * v * r * ds_temp
 
-    if bc_type == 'Neumann' and equation_type == 'drift-diffusion-reaction':
+    if bc_type == "Neumann" and equation_type == "drift-diffusion-reaction":
         # Note: Here we use the built-in dolfin.ds, not the ds_temp passed in.
         return 2.0 * df.pi * df.dot(sign * mu * E, normal) * df.exp(u) * v * r * df.ds
 
     # default, returned if bc_type is 'zero_flux', or if no other conditions are met.
     return 0.0
 
-def Transport_coefficient_interpolation(status, dependence, N0, Tgas, k_coeff, kx, ky, energy, redfield, mu = 0.0, Te = 0):
-    """
-    Function for linear interpolation of transport coefficients. Input
-    arguments are status (initial definition or update), dependence
-    of varaible (const, energy, reduced electric field, ESR), gas
-    number density, gas temperature, list of coefficient variables,
-    look-up table data (k_x and k_y), energy, reduced electric field
-    and mobility (for ESR).
-    """
-    num_par = len(k_coeff)
-    if status == 'initial':
-        i = 0
-        while i < num_par:
-            if dependence[i] == 'const':
-                k_coeff[i].vector()[:] = ky[i]/N0
-            elif dependence[i] == 'Umean':
-                k_coeff[i].vector()[:] = np.interp(energy.vector()[:], kx[i], ky[i])/N0
-            elif dependence[i] == 'E/N':
-                k_coeff[i].vector()[:] = np.interp(redfield.vector()[:], kx[i], ky[i])/N0
-            elif dependence[i] == 'ESR':
-                k_coeff[i].vector()[:] = kB*Tgas*mu[i].vector()[:]/elementary_charge
-            elif dependence[i] == 'Tgas':
-                k_coeff[i].vector()[:] = np.interp(Tgas, kx[i], ky[i])/N0
-            i += 1
-    elif status == 'update':
-        i = 0
-        while i < num_par:
-            if dependence[i] == 'Umean':
-                k_coeff[i].vector()[:] = np.interp(energy.vector()[:], kx[i], ky[i])/N0
-            elif dependence[i] == 'E/N':
-                k_coeff[i].vector()[:] = np.interp(redfield.vector()[:], kx[i], ky[i])/N0
-            elif dependence[i] == 'ESR':
-                k_coeff[i].vector()[:] = kB*Tgas*mu[i].vector()[:]/elementary_charge
-            elif dependence[i] == 'Tgas':
-                k_coeff[i].vector()[:] = np.interp(Tgas, kx[i], ky[i])/N0
-            i += 1
 
-def Rate_coefficient_interpolation(status, dependence, k_coeff, kx, ky, energy, redfield, Te = 0, Tgas = 300):
+def Transport_coefficient_interpolation(
+    status: str,
+    dependences: List[str],
+    N0: float,
+    Tgas: float,
+    k_coeffs: List[df.Function],
+    kxs: List[Any],
+    kys: List[Any],
+    energy: df.Function,
+    redfield: df.Function,
+    mus: Optional[List[df.Function]] = None,
+) -> None:
     """
-    Function for linear interpolation of rate coefficients. Input arguments
-    are status (initial  or update), dependence of varaible (const, energy,
-    reduced electric field, Te, Tgas), list of coefficient variables, look-up
-    table, energy and reduced electric field.
-    """
-    nr = len(k_coeff)
-    if status == 'initial':
-        i = 0
-        while i < nr:
-            if dependence[i] == 'const':
-                k_coeff[i].vector()[:] = ky[i]
-            elif dependence[i] == 'Umean':
-                k_coeff[i].vector()[:] = np.interp(energy.vector()[:], kx[i], ky[i])
-            elif dependence[i] == 'E/N':
-                k_coeff[i].vector()[:] = np.interp(redfield.vector()[:], kx[i], ky[i])
-            elif dependence[i] == 'fun:Te,Tgas':
-                k_coeff[i] = eval(ky[i])
-            elif dependence[i] == 'fun:Tgas':
-                k_coeff[i] = eval(ky[i])
-            i += 1
-    elif status == 'update':
-        i = 0
-        while i < nr:
-            if dependence[i] == 'Umean':
-                k_coeff[i].vector()[:] = np.interp(energy.vector()[:], kx[i], ky[i])
-            elif dependence[i] == 'E/N':
-                k_coeff[i].vector()[:] = np.interp(redfield.vector()[:], kx[i], ky[i])
-            elif dependence[i] == 'Te':
-                k_coeff[i].vector()[:] = np.interp(2*energy.vector()[:]/(3*kB_eV), kx[i], ky[i])
-            i += 1
+    Function for linear interpolation of transport coefficients. Modifies k_coeffs.
 
-def semi_implicit_coefficients(dependence, mean_energy_new, mean_energy_old, coefficient, coefficient_diff):
-    coefficient_si = []
-    i = 0
-    while i < len(dependence):
-        if dependence[i] == "Umean":
-            coefficient_si.append(coefficient[i] + coefficient_diff[i]*(mean_energy_new - mean_energy_old))
+    Parameters
+    ----------
+    status: str
+        Possible values are 'initial' or 'update'. The former should be used when
+        determining the initial definition.
+    dependences: List[str]
+        Possible values are 'const', 'Umean', 'E/N', 'ESR', or 'Tgas'. Can also be
+        set to 0 to skip this k_coeff.
+    N0: float
+        Gas number density
+    Tgas: float
+        Gas temperature
+    k_coeff: List[df.Function]
+        List of coefficient variables
+    kx: List[Any]
+        Look-up table data
+    ky: List[Any]
+        Look-up table data
+    energy: df.Function
+        Energy function
+    redfield: df.Function
+        Reduced electric field.
+    mus: List[df.Function], default None
+        Mobilities
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    ValueError
+        If given incorrect status or dependences, or if using ESR dependence without
+        providing mus, or if the provided lists are not all of the same length.
+    """
+
+    possible_statuses = ["initial", "update"]
+    possible_dependences = [0, "const", "Umean", "E/N", "ESR", "Tgas"]
+
+    if status not in possible_statuses:
+        raise ValueError(
+            f"fedm.Transport_coefficient_interpolation: status '{status}' not "
+            f"recognised. Must be one of {', '.join(quoted(possible_statuses))}."
+        )
+
+    for dependence in dependences:
+        if dependence not in possible_dependences:
+            raise ValueError(
+                "fedm.Transport_coefficient_interpolation: "
+                f"dependence '{dependence}' not recognised. "
+                f"Must be one of {', '.join(quoted(possible_dependences))}."
+            )
+
+    # Handle case when mu's are not provided
+    if mus is None:
+        if "ESR" in dependences:
+            raise ValueError(
+                "fedm.Transport_coefficient_interpolation: Must provide mus "
+                "(mobilities) when using ESR dependence."
+            )
+        # Expand mus to size of k_coeffs to ensure it can be zipped properly
+        mus = [None] * len(k_coeffs)
+
+    # Ensure all args have the correct lengths
+    if not all([len(x) == len(k_coeffs) for x in [dependences, kxs, kys, mus]]):
+        raise ValueError(
+            "fedm.Transport_coefficient_interpolation: The lists 'dependences', 'kxs', "
+            "'kys', 'k_coeffs', and (optionally) 'mus' must be the same length."
+        )
+
+    for k_coeff, dependence, kx, ky, mu in zip(k_coeffs, dependences, kxs, kys, mus):
+        # For 'const', only do something if status is 'initial'
+        if dependence == "const" and status == "initial":
+            k_coeff.vector()[:] = ky / N0
+        elif dependence == "Umean":
+            k_coeff.vector()[:] = np.interp(energy.vector()[:], kx, ky) / N0
+        elif dependence == "E/N":
+            k_coeff.vector()[:] = np.interp(redfield.vector()[:], kx, ky) / N0
+        elif dependence == "ESR":
+            k_coeff.vector()[:] = kB * Tgas * mu.vector()[:] / elementary_charge
+        elif dependence == "Tgas":
+            k_coeff.vector()[:] = np.interp(Tgas, kx, ky) / N0
         else:
-            coefficient_si.append(coefficient[i])
-        i += 1
-    return coefficient_si
+            pass  # If no conditions are met, do nothing
 
-def Source_term(coupling, approx, p_matrix, l_matrix, g_matrix, k_coeff, N0, u):
+
+def Rate_coefficient_interpolation(
+    status: str,
+    dependences: List[str],
+    k_coeffs: List[df.Function],
+    kxs: List[Any],
+    kys: List[Any],
+    energy: df.Function,
+    redfield: df.Function,
+    Te: float = 300.0,
+    Tgas: float = 300.0,
+) -> None:
+    """
+    Function for linear interpolation of rate coefficients.
+
+    WARNING: When using the dependences 'fun:Te,Tgas' and 'fun:Tgas', this function
+    will evaluate the corresponding contents of 'ky' using 'eval'. It is the user's
+    responsibility to ensure no malicious code is injected here.
+
+    Parameters
+    ----------
+    status: str
+        Possible values are 'initial' or 'update'. The former should be used when
+        determining the initial definition.
+    dependences: List[str]
+        Possible values are 'const', 'Umean', 'E/N', 'ESR', or 'Tgas'. Can also be set
+        to zero to skip this k_coeff.
+    k_coeff: List[df.Function]
+        List of coefficient variables
+    kx: List[Any]
+        Look-up table data
+    ky: List[Any]
+        Look-up table data
+    energy: df.Function
+        Energy function
+    redfield: df.Function
+        Reduced electric field.
+    Tgas: float, default 300.0
+        Gas temperature. Not used directly, but may be used by user-supplied function.
+    Te: float, default 0.0
+        Electron temperature. Not used directly, but may be used by user-supplied
+        function.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    ValueError
+        If given incorrect status or dependences, or if the provided lists are not all
+        of the same length.
+    Exception
+        The user may supply their own functions using the 'fun:Te,Tgas' or 'fun:Tgas'
+        dependences. These are evaluated using 'eval', meaning anything could happen.
+    """
+    possible_statuses = ["initial", "update"]
+    possible_dependences = [0, "const", "Umean", "E/N", "Te", "fun:Te,Tgas", "fun:Tgas"]
+
+    # Avoid linter warnings about unused variables...
+    Tgas = float(Tgas)
+    Te = float(Te)
+
+    if status not in possible_statuses:
+        raise ValueError(
+            f"fedm.Rate_coefficient_interpolation: status '{status}' not recognised. "
+            f"Must be one of {', '.join(quoted(possible_statuses))}."
+        )
+
+    for dependence in dependences:
+        if dependence not in possible_dependences:
+            raise ValueError(
+                f"fedm.Rate_coefficient_interpolation: dependence '{dependence}' not "
+                f"recognised. Must be one of {', '.join(quoted(possible_dependences))}."
+            )
+
+    # Ensure all args have the correct lengths
+    if not all([len(x) == len(k_coeffs) for x in [dependences, kxs, kys]]):
+        raise ValueError(
+            "fedm.Rate_coefficient_interpolation: The lists 'dependences', 'kxs', "
+            "'kys', and 'k_coeffs' must be the same length."
+        )
+
+    for k_coeff, dependence, kx, ky in zip(k_coeffs, dependences, kxs, kys):
+        # For 'const' and 'fun:...' only do something if status is 'initial'
+        if dependence == "const" and status == "initial":
+            k_coeff.vector()[:] = ky
+        # Catch both 'fun:Te,Tgas' and 'fun:Tgas'
+        elif dependence[:3] == "fun" and status == "initial":
+            k_coeff = eval(ky)
+        # For 'Te', only do something if status is 'update'
+        elif dependence == "Te" and status == "update":
+            k_coeff.vector()[:] = np.interp(
+                2 * energy.vector()[:] / (3 * kB_eV), kx, ky
+            )
+        elif dependence == "Umean":
+            k_coeff.vector()[:] = np.interp(energy.vector()[:], kx, ky)
+        elif dependence == "E/N":
+            k_coeff.vector()[:] = np.interp(redfield.vector()[:], kx, ky)
+        else:
+            pass  # If no conditions are met, do nothing
+
+
+def semi_implicit_coefficients(
+    dependences: List[str],
+    mean_energy_new: Any,  # Generated via an expression on mean_energy_old
+    mean_energy_old: df.Function,
+    coefficients: List[df.Function],
+    coefficient_diffs: List[df.Function],
+) -> List[df.Function]:
+    # TODO needs docstring
+
+    if not all([len(x) == len(dependences) for x in [coefficients, coefficient_diffs]]):
+        raise ValueError(
+            "fedm.semi_implicit_coefficients: The lists 'dependences', 'coefficients', "
+            "and 'coefficient_diffs' must be the same length."
+        )
+
+    return [
+        coeff + diff * (mean_energy_new - mean_energy_old) if dep == "Umean" else coeff
+        for coeff, diff, dep in zip(coefficients, coefficient_diffs, dependences)
+    ]
+
+
+def Source_term(
+    coupling: str,
+    approx: str,
+    p_matrix: np.ndarray,
+    l_matrix: np.ndarray,
+    g_matrix: np.ndarray,
+    k_coeffs: List[df.Function],
+    N0: float,
+    u: Any,
+) -> List[Any]:
     """
     Defines source term for coupled or uncoupled approach, with
     LFA (counting particles from 0) or LMEA approximation
     (counting particle from 1 and the zeroth equation is energy).
-    Function arguments are power, loss and gain matrices,
-    the rate coeffiient, energy loss, mean energy, gas number
-    density  and particle number density variable
-    """
-    if coupling == "coupled":
-        if approx == "LFA":
-            nr = len(k_coeff)
-            neq = len(u)
-            Rate = [0]*nr
-            j = 0
-            while j < nr:
-                temp = 1
-                i = 0
-                while i < neq:
-                    if i == 0:
-                        temp *= np.power(N0, p_matrix[j, i])
-                    else:
-                        temp *= np.power(exp(u[i-1]), p_matrix[j, i])
-                    i += 1
-                Rate[j] = k_coeff[j]*temp
-                j += 1
-            f_temp = [0]*neq
-            i = 0
-            while i < neq:
-                temp = 0
-                j = 0
-                while j < nr:
-                    temp += (g_matrix[j, i] *Rate[j] - l_matrix[j, i] *Rate[j])
-                    j += 1
-                f_temp[i] = temp
-                i += 1
-        elif approx == "LMEA":
-            nr = len(k_coeff)
-            neq = len(u)-1
-            Rate = [0]*nr
-            j = 0
-            while j < nr:
-                temp = 1
-                i = 0
-                while i < neq:
-                    if i == 0:
-                        temp *= np.power(N0, p_matrix[j, i])
-                    else:
-                        temp *= np.power(exp(u[i]), p_matrix[j, i])
-                    i += 1
-                Rate[j] = k_coeff[j]*temp
-                j += 1
-            f_temp = [0]*neq
-            i = 0
-            while i < neq:
-                temp = 0
-                j = 0
-                while j < nr:
-                    temp += (g_matrix[j, i] *Rate[j] - l_matrix[j, i] *Rate[j])
-                    j += 1
-                f_temp[i] = temp
-                i += 1
-    elif coupling == "uncoupled":
-        if approx == "LFA":
-            nr = len(k_coeff)
-            neq = len(u)
-            Rate = [0]*nr
-            j = 0
-            while j < nr:
-                temp = 1
-                i = 0
-                while i < neq:
-                    if i == 0:
-                        temp *= np.power(N0, p_matrix[j, i])
-                    else:
-                        temp *= np.power(exp(u[i]), p_matrix[j, i])
-                    i += 1
-                Rate[j] = k_coeff[j]*temp
-                j += 1
-            f_temp = [0]*neq
-            i = 0
-            while i < neq:
-                temp = 0
-                j = 0
-                while j < nr:
-                    temp += (g_matrix[j, i] *Rate[j] - l_matrix[j, i] *Rate[j])
-                    j += 1
-                f_temp[i] = temp
-                i += 1
-        elif approx == "LMEA":
-            nr = len(k_coeff)
-            neq = len(u)
-            Rate = [0]*nr
-            j = 0
-            while j < nr:
-                temp = 1
-                i = 0
-                while i < neq:
-                    if i == 0:
-                        temp *= np.power(N0, p_matrix[j, i])
-                    else:
-                        temp *= np.power(exp(u[i]), p_matrix[j, i])
-                    i += 1
-                Rate[j] = k_coeff[j]*temp
-                j += 1
-            f_temp = [0]*neq
-            i = 0
-            while i < neq:
-                temp = 0
-                j = 0
-                while j < nr:
-                    temp += (g_matrix[j, i] *Rate[j] - l_matrix[j, i] *Rate[j])
-                    j += 1
-                f_temp[i] = temp
-                i += 1
-    return f_temp
 
-def Energy_Source_term(coupling, p_matrix, l_matrix, g_matrix, k_coeff, u_loss, mean_energy, N0, n, Ei = 0):
+    Parameters
+    ----------
+    coupling: str
+        Either 'coupled' or 'uncoupled'
+    approx: str
+        Either 'LFA' or 'LMEA'
+    p_matrix: np.ndarray
+        Power matrix
+    l_matrix: np.ndarray
+        Loss matrix
+    g_matrix: np.ndarray
+        Gain matrix
+    k_coeffs: List[df.Function]
+        Rate coefficient, energy loss and mean energy
+    N0: float
+        Gas number density
+    u
+        Trial function
+
+    Returns
+    -------
+    List[Any]
+        Source terms
+
+    Raises
+    ------
+    ValueError
+        If coupling or approx are invalid. Could also be raised if the inputs have the
+        wrong shapes.
+    """
+    couplings = ["coupled", "uncoupled"]
+    approximations = ["LFA", "LMEA"]
+
+    if coupling not in couplings:
+        raise ValueError("fedm.Source_term: coupling must be 'coupled' or 'uncoupled'.")
+
+    if approx not in approximations:
+        raise ValueError("fedm.Source_term: approx must be 'LFA' or 'LMEA'.")
+
+    # In all cases, the zeroth element is the gas number density
+    # If coupled and LMEA, we discard the last u, i.e. [N0, *exp(u[1:-1])]
+    # If coupled and LFA, we discard the first u, i.e. [N0, *exp(u[0:-1])]
+    # If uncoupled, we discard the first u, i.e. [N0, *exp(u[1:])]
+    start = 0 if coupling == "coupled" and approx == "LFA" else 1
+    end = len(u) - 1 if coupling == "coupled" else len(u)
+    exp_u = [N0] + [df.exp(u[i]) for i in range(start, end)]
+
+    temp = np.power(exp_u, p_matrix).prod(axis=-1)
+    rate = temp * k_coeffs
+    f_temp = (rate[:, np.newaxis] * (g_matrix - l_matrix)).sum(axis=0)
+
+    return list(f_temp)
+
+
+def Energy_Source_term(
+    coupling: str,
+    p_matrix: np.ndarray,
+    l_matrix: np.ndarray,
+    g_matrix: np.ndarray,
+    k_coeffs: List[df.Function],
+    u_loss: List[float],
+    mean_energy: Any,  # dolfin expression
+    N0: float,
+    n: Any,  # Trial function
+    Ei=0,
+) -> List[Any]:
     """
     Defines energy source term for LMEA approximation. Function arguments
     are power, loss and gain matrices, rate coeffiients, energy losses for specific
     process, mean electron energy, gas number density and particle number density
     variable.
     """
-    if coupling == "coupled":
-        nr = len(k_coeff)
-        neq = len(n) - 1
-        Rate = [0]*nr
-        j = 0
-        while j < nr:
-            temp = 1
-            i = 0
-            while i < neq:
-                if i == 0:
-                    temp *= np.power(N0, p_matrix[j, i])
-                else:
-                    temp *= np.power(exp(n[i]), p_matrix[j, i])
-                i += 1
-            if u_loss[j] > 7e77 and u_loss[j] < 8e77:
-                Rate[j] = -(Ei - mean_energy)*k_coeff[j]*temp
-            elif  u_loss[j] > 9e99 and u_loss[j] < 1e100:
-                Rate[j] = -mean_energy*k_coeff[j]*temp
-            else:
-                Rate[j] = -u_loss[j]*k_coeff[j]*temp
-            j += 1
-        f_temp = 0
-        i = 0
-        while i < nr:
-                f_temp +=  Rate[i]
-                i += 1
-    elif coupling == "uncoupled":
-        nr = len(k_coeff)
-        neq = len(n)
-        Rate = [0]*nr
-        j = 0
-        while j < nr:
-            temp = 1
-            i = 0
-            while i < neq:
-                if i == 0:
-                    temp *= np.power(N0, p_matrix[j, i])
-                else:
-                    temp *= np.power(exp(n[i]), p_matrix[j, i])
-                i += 1
-            if u_loss[j] > 7e77 and u_loss[j] < 8e77:
-                Rate[j] = -(Ei - mean_energy)*k_coeff[j]*temp
-            elif  u_loss[j] > 9e99 and u_loss[j] < 1e100:
-                Rate[j] = -mean_energy*k_coeff[j]*temp
-            else:
-                Rate[j] = -u_loss[j]*k_coeff[j]*temp
-            j += 1
-        f_temp = 0
-        i = 0
-        while i < nr:
-                f_temp +=  Rate[i]
-                i += 1
-    return f_temp
+    """
+    Defines energy source term for LMEA approximation.
 
-def adaptive_timestep(dt, error, tol = 1e-4, dt_min = 1e-13, dt_max = 1e-9):
-    """
-    Function calculates new time step based on a PID controller
-    M.  Moeller,  Time  stepping  methods,  ATHENS  course:
-    Introductioninto Finite Elements, Delft Institute of Applied
-    Mathematics, TU Delft(2015). Input arguments are time step,
-    error, tolerance for time step controller, minimal and maximal
-    time step.
-    """
-    dt *= (error[1]/error[0])**0.075 * (tol/error[0])**0.175 * (error[1]**2/(error[0]*error[2]))**0.01
-    dt = min(dt, dt_max)
-    dt = max(dt, dt_min)
-    return dt
+    Parameters
+    ----------
+    coupling: str
+        Either 'coupled' or 'uncoupled'
+    p_matrix: np.ndarray
+        Power matrix
+    l_matrix: np.ndarray
+        Loss matrix
+    g_matrix: np.ndarray
+        Gain matrix
+    k_coeffs: List[df.Function]
+        Rate coefficients
+    u_loss: List[float]
+        Energy losses for specific process
+    mean_energy
+        Mean electron energy.
+    N0: float
+        Gas number density
+    n:
+        Trial function (???)
+    Ei:
+        particle number density
 
-def adaptive_timestep_PI34(dt, error, tol = 1e-4, dt_min = 1e-13, dt_max = 1e-9):
-    """
-    Function calculates new time step size using PI.3.4 controller
-    (G. Soederlind Numerical Algorithms 31: 281-310, 2002). Input
-    arguments are time-step size, error, tolerance for time step controller,
-    minimal and maximal time-step size.
-    """
-    dt *= (0.8*tol/error[0])**(0.3/3)* (0.8*error[1]/error[0])**(0.4/3)
-    dt = min(dt, dt_max)
-    dt = max(dt, dt_min)
-    return dt
+    Returns
+    -------
+    List[Any]
+        Source terms
 
-def adaptive_timestep_H211b(dt, dt_old, error, tol = 1e-4, dt_min = 1e-13, dt_max = 1e-9):
+    Raises
+    ------
+    ValueError
+        If coupling is invalid. Could also be raised if the inputs have the wrong
+        shapes.
     """
-    Function calculates new time step size using H211b controller
-    (G. Soederlind, Acm. T. Math. Software 29: 1-26, 2003). Input arguments are
-    time step size, previous time step size, error, tolerance for time
-    step controller, minimal and maximal time step.
-    """
-    dt *= (0.8*tol/error[0])**(1/12)* (0.8*tol/error[1])**(1/12)*(dt/dt_old)**(-1/4)
-    dt = min(dt, dt_max)
-    dt = max(dt, dt_min)
-    return dt
 
-def adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, var_list_new, var_list_old, assigner, error, file_error, max_error, ttol, dt_min, time_dependent_arguments = [], approximation = 'LMEA'):
-    '''
-    This function is used for solving the problem when adaptive time stepping
-    is used. Input arguments are solver (PETScSNESSolver or NonlinearSolver),
-    problem, time step, time step size, previous time step size, new variables
-    defined on mixed function space, old variables defined on mixed function
-    space, list of new variable for postprocessing, list of old varaibles for
-    postprocessing, assigner for assigning values between variables, error,
-    file for error output, maximal error, time stepping tolerance, minimal
-    time step, list of functions that need to be updated (time dependent
-    expresions and type of used approximation (by default it is LMEA)).
-    '''
-    if (MPI.rank(MPI.comm_world) == 0):
-        print('Attempting to solve the equation for t = ' + str(t) + ' with dt = ' + str(dt.time_step), flush = True)
-    try_except = False
-    while try_except == False:
+    neq = len(n) - 1 if coupling == "coupled" else len(n)
+    exp_u = [N0] + [df.exp(n[i]) for i in range(1, neq)]
+    temp = np.power(exp_u, p_matrix).prod(axis=-1)
+    rate = -temp * k_coeffs
+    for idx, loss in enumerate(u_loss):
+        if loss > 7e77 and loss < 8e77:
+            rate[idx] *= Ei - mean_energy
+        elif loss > 9e99 and loss < 1e100:
+            rate[idx] *= mean_energy
+        else:
+            rate[idx] *= loss
+    return rate.sum()
+
+
+def adaptive_timestep(dt, error, tol=1e-4, dt_min=1e-13, dt_max=1e-9):
+    """
+    Function calculates new time step based on a PID controller M.  Moeller, Time
+    stepping  methods,  ATHENS  course: Introductioninto Finite Elements, Delft
+    Institute of Applied Mathematics, TU Delft(2015). Input arguments are time step,
+    error, tolerance for time step controller, minimal and maximal time step.
+    """
+    dt *= (
+        (error[1] / error[0]) ** 0.075
+        * (tol / error[0]) ** 0.175
+        * (error[1] ** 2 / (error[0] * error[2])) ** 0.01
+    )
+    return max(min(dt, dt_max), dt_min)
+
+
+def adaptive_timestep_PI34(dt, error, tol=1e-4, dt_min=1e-13, dt_max=1e-9):
+    """
+    Function calculates new time step size using PI.3.4 controller (G. Soederlind
+    Numerical Algorithms 31: 281-310, 2002). Input arguments are time-step size, error,
+    tolerance for time step controller, minimal and maximal time-step size.
+    """
+    dt *= (0.8 * tol / error[0]) ** (0.3 / 3) * (0.8 * error[1] / error[0]) ** (0.4 / 3)
+    return max(min(dt, dt_max), dt_min)
+
+
+def adaptive_timestep_H211b(dt, dt_old, error, tol=1e-4, dt_min=1e-13, dt_max=1e-9):
+    """
+    Function calculates new time step size using H211b controller (G. Soederlind, Acm.
+    T. Math. Software 29: 1-26, 2003). Input arguments are time step size, previous time
+    step size, error, tolerance for time step controller, minimal and maximal time step.
+    """
+    dt *= (
+        (0.8 * tol / error[0]) ** (1 / 12)
+        * (0.8 * tol / error[1]) ** (1 / 12)
+        * (dt / dt_old) ** (-1 / 4)
+    )
+    return max(min(dt, dt_max), dt_min)
+
+
+class ErrorGreaterThanTTOL(Exception):
+    pass
+
+
+def adaptive_solver(
+    nonlinear_solver: Union[df.PETScSNESSolver, df.NonlinearVariationalSolver],
+    problem: Problem,
+    t: float,
+    dt: df.Expression,
+    dt_old: df.Expression,
+    u_new: df.Function,
+    u_old: df.Function,
+    var_list_new: List[Any],  # List from Function_definition
+    var_list_old: List[Any],  # List from Function definition
+    assigner: df.FunctionAssigner,
+    error: List[float],
+    file_error: TextIOWrapper,  # File handle
+    max_error: List[float],
+    ttol: float,
+    dt_min: float,
+    time_dependent_arguments: Optional[List[Any]] = None,
+    approximation: str = "LMEA",
+) -> float:
+    """
+    This function is used for solving the problem when adaptive time stepping is used.
+
+    Parameters
+    ----------
+    nonlinear_solver: Union[df.PETScSNESSolver, df.NonlinearVariationalSolver]
+        The Dolfin solver to use.
+    problem: Problem
+        Nonlinear problem definition
+    t: float
+        Time
+    dt: df.Expression
+        Time step size
+    dt_old: df.Expression
+        Previous time step size
+    u_new: df.Function
+        New variables defined on mixed function space
+    u_old: df.Function
+        Old variables defined on mixed function space
+    var_list_new: List[Any]
+        List of new variables for postprocessing
+    var_list_old: List[Any]
+        List of old variables for postprocessing
+    assigner: df.FunctionAssigner
+        Assigns values between variables
+    error: List[float]
+        Record of errors
+    file_error: TextIOWrapper
+        File handle for error file
+    max_error: List[float]
+        Maximum errors
+    ttol: float
+        Timestepping tolerance
+    dt_min: float
+        Minimum timestep allowed
+    time_dependent_arguments: List[Any], default None
+        List of functions that need to be updated with time
+    approximation: str, default 'LMEA'
+        Type of approximation to use, options are 'LMEA' or 'LFA'.
+
+    Returns
+    -------
+    float
+        The new time 't'
+
+    Raises
+    ------
+    SystemExit
+        If the time step size is reduced below dt_min
+    """
+
+    print_rank_0(
+        f"Attempting to solve the equation for t = {t} with dt = {dt.time_step}",
+        flush=True,
+    )
+
+    # Try to advance a time step
+    # If an exception is raised, or the error is too large, reset and try again with
+    # a smaller time step.
+    # Force exit the program if dt < dt_min
+    while True:
         try:
-            t += dt.time_step # Updating time step
+            # Updating time step
+            t += dt.time_step
 
             # Updating time dependent expressions, if there are any.
-            if isinstance(time_dependent_arguments, list) == True:
-                i = 0
-                while i < len(time_dependent_arguments):
-                    time_dependent_arguments[i].t = t
-                    i += 1
+            if time_dependent_arguments is not None:
+                for arg in time_dependent_arguments:
+                    arg.t = t
 
-            num_vars = len(var_list_new)
+            # solving the equation
+            nonlinear_solver.solve(problem, u_new.vector())
 
-            nonlinear_solver.solve(problem, u_new.vector()) # solving  the equation
-            try_except = True
+            # assigning newly calculated values to post-processing variablables
+            assigner.assign(var_list_new, u_new)
 
-            assigner.assign(var_list_new, u_new) # assigning newly calculated values to post-processing variablables
-
-            # Error estimation. Depending on the used approximation, it is determined from electron energy density, electron number density or, if nothing is specified as an argument, from all the variables solved for.
-            if approximation == 'LMEA':
-                error[0] = norm(var_list_new[0].vector()-var_list_old[0].vector()+DOLFIN_EPS)/norm(var_list_old[0].vector()+DOLFIN_EPS)#l2_norm(t, dt.time_step, we_newV, we_oldV)
-            elif approximation == 'LFA':
-                error[0] = norm(var_list_new[num_vars-2].vector()-var_list_old[num_vars-2].vector()+DOLFIN_EPS)/norm(var_list_old[num_vars-2].vector()+DOLFIN_EPS)#l2_norm(t, dt.time_step, we_newV, we_oldV)
+            # Error estimation.
+            # Depending on the used approximation, it is determined from electron
+            # energy density, electron number density or, if nothing is specified as
+            # an argument, from all the variables solved for.
+            if approximation == "LMEA" or approximation == "LFA":
+                idx = 0 if approximation == "LMEA" else -2
+                var_new, var_old = var_list_new[idx], var_list_old[idx]
             else:
-                error[0] = norm(u_new.vector()-u_old.vector()+DOLFIN_EPS)/norm(u_old.vector()+DOLFIN_EPS)#l2_norm(t, dt.time_step, we_newV, we_oldV)
+                var_new, var_old = u_new, u_old
+            # l2_norm(t, dt.time_step, we_newV, we_oldV)
+            error[0] = df.norm(
+                var_new.vector() - var_old.vector() + df.DOLFIN_EPS
+            ) / df.norm(var_old.vector() + df.DOLFIN_EPS)
 
-            file_error.write("{:<23}".format(str(error[0])) + '  ')
-            file_error.write("{:<23}".format(str(dt_old.time_step)) + '  ' + "{:<23}".format(str(dt.time_step)) + '\n') # writting relative error to file
+            # Writing relative error to file
+            file_error.write(
+                f"{error[0]:<23}  {dt_old.time_step:<23}  {dt.time_step:<23}\n"
+            )
             file_error.flush()
-            max_error[0] = max(error) # finding maximum error
-            if error[0] >= ttol: # if maximum error is greater than the time stepping tolerance, the variables are reset to previous time step and calculations are repeated with the reduced time step size
-                t -= dt.time_step # reseting time step to the previous time step
-                dt.time_step *= (0.5*ttol/max_error[0]) # Reducing time-step size
-                u_new.assign(u_old) # reseting variables to the previous time step
-                assigner.assign(var_list_new, u_new) # assigning reset values to post-processing variablables
-                try_except = False
-                if (MPI.rank(MPI.comm_world) == 0):
-                    print('Residual is greater than the prescribed tolerance. Reducing time-step size and repeating calculation. \n')
-        except:
-            t -= dt.time_step # reseting time step to the previous time step
-            dt.time_step *= 0.5 # Reducing time-step size
-            u_new.assign(u_old) # reseting variables to the previous time step
-            assigner.assign(var_list_new, u_new) # assigning reset values to post-processing variablables
-            try_except = False
-            if (dt.time_step < dt_min):
-                print('Solver failed. Reducing time-step size and repeating calculation. \n')
-        if (dt.time_step < dt_min):
-            sys.exit('Minimum time-step size reached, program is terminating.')
-    return t # updating time step
+            max_error[0] = max(error)  # finding maximum error
 
-def Normal_vector(mesh):
-    W = VectorFunctionSpace(mesh, "CG", 1)
+            # If maximum error is greater than the time stepping tolerance, the
+            # variables are reset to previous time step and calculations are repeated
+            # with the reduced time step size.
+            if error[0] >= ttol:
+                raise ErrorGreaterThanTTOL
+
+            # If we get this far, break out of the while loop and exit function
+            break
+
+        except Exception as exc:
+            # Reseting time step to the previous time step
+            t -= dt.time_step
+
+            # Reducing time-step size and print error msg to screen
+            if isinstance(exc, ErrorGreaterThanTTOL):
+                dt.time_step *= 0.5 * ttol / max_error[0]
+                print_rank_0(
+                    "Residual is greater than the prescribed tolerance. Reducing "
+                    "time-step size and repeating calculation."
+                )
+            else:
+                dt.time_step *= 0.5
+                print_rank_0(
+                    "An exception was raised while solving. Reducing time-step size "
+                    "and repeating calculation."
+                )
+
+            # If it's too small, force close program
+            if dt.time_step < dt_min:
+                raise SystemExit(
+                    "Minimum time-step size reached, program is terminating."
+                )
+
+            # reseting variables to the previous time step
+            u_new.assign(u_old)
+
+            # assigning reset values to post-processing variablables
+            assigner.assign(var_list_new, u_new)
+
+    # Return the new time step
+    return t
+
+
+def Normal_vector(mesh: df.Mesh):
+    # TODO Write docstring
+    W = df.VectorFunctionSpace(mesh, "CG", 1)
 
     # Projection of the normal vector on P1 space
-    u = TrialFunction(W)
-    v = TestFunction(W)
-    n = FacetNormal(mesh)
-    a = inner(u, v)*ds
-    L = inner(n, v)*ds
+    u = df.TrialFunction(W)
+    v = df.TestFunction(W)
+    n = df.FacetNormal(mesh)
+    a = df.inner(u, v) * df.ds
+    L = df.inner(n, v) * df.ds
+
     # Solve system
-    A = assemble(a, keep_diagonal=True)
-    b = assemble(L)
+    A = df.assemble(a, keep_diagonal=True)
+    b = df.assemble(L)
     A.ident_zeros()
-    n = Function(W)
-    solve(A, n.vector(), b, 'mumps')
+    n = df.Function(W)
+    df.solve(A, n.vector(), b, "mumps")
+
     return n
 
-def Poisson_solver(A, L, b, bcs, u, solver_type = 'mumps', preconditioner = 'hypre_amg'):
-    b = assemble(L, tensor = b)
-    [bc.apply(b) for bc in bcs]
-    if solver_type == 'mumps':
-        solve(A, u.vector(), b, solver_type)
-    else:
-        solve(A, u.vector(), b, solver_type, preconditioner)
 
-def BoundaryGradient(var, zeroDomain, source_term, ds_extract, epsilon = 8.854187817e-12):
+def Poisson_solver(A, L, b, bcs, u, solver_type="mumps", preconditioner="hypre_amg"):
+    # TODO Write docstring
+    b = df.assemble(L, tensor=b)
+    [bc.apply(b) for bc in bcs]
+    if solver_type == "mumps":
+        df.solve(A, u.vector(), b, solver_type)
+    else:
+        df.solve(A, u.vector(), b, solver_type, preconditioner)
+
+
+def BoundaryGradient(var, zeroDomain, source_term, ds_extract, epsilon=8.854187817e-12):
     """
-    The function is an adaptation of the code snippet by D. Kamensky from https://fenicsproject.discourse.group/t/compute-gradient-of-scalar-field-on-boundarymesh/1172/2.
-    It is used for the accurate calculation of the flux (in this case the electric field) across the specific boundary. Input parameters are variable whose gradient needs to be
-    determined, marker of the whole domain except the boundary on which flux is calculated, the source term of the equation, list of ds of the specific boundaries
-    (irrelevant boundaries should be marked as zero).
+    The function is an adaptation of the code snippet by D. Kamensky from
+    https://fenicsproject.discourse.group/t/compute-gradient-of-scalar-field-on-boundarymesh/1172/2.
+    It is used for the accurate calculation of the flux (in this case the electric
+    field) across the specific boundary. Input parameters are variables whose gradient
+    needs to be determined, marker of the whole domain except the boundary on which
+    flux is calculated, the source term of the equation, list of ds of the specific
+    boundaries (irrelevant boundaries should be marked as zero).
     """
     V = var.ufl_function_space()
-    antiBCs = [DirichletBC(V, Constant(0.0), zeroDomain())]
-    n = FacetNormal(V.mesh())
+    antiBCs = [df.DirichletBC(V, df.Constant(0.0), zeroDomain())]
+    n = df.FacetNormal(V.mesh())
 
-    E = TrialFunction(V)    # Electric field trial function
-    v_phi = TestFunction(V)  # Potential test function
-    En = Function(V)
+    E = df.TrialFunction(V)  # Electric field trial function
+    v_phi = df.TestFunction(V)  # Potential test function
+    En = df.Function(V)
 
-    res = epsilon*inner(grad(var), grad(v_phi))*dx - source_term*v_phi*dx   # Poisson equation residual
-    consistencyTerm = epsilon*inner(-grad(var),n)*v_phi*ds_extract[0]
+    # Poisson equation residual
+    res = (
+        epsilon * df.inner(df.grad(var), df.grad(v_phi)) * df.dx
+        - source_term * v_phi * df.dx
+    )
+
+    consistencyTerm = epsilon * df.inner(-df.grad(var), n) * v_phi * ds_extract[0]
     F = 0
     for i, ds in enumerate(ds_extract):
         if i == 0:
             F += -consistencyTerm
         else:
-            F += epsilon*E*v_phi*ds
+            F += epsilon * E * v_phi * df.ds
 
-    F += epsilon*inner(grad(var), grad(v_phi))*dx - source_term*v_phi*dx
+    F += res
 
-    a, L = lhs(F), rhs(F)
+    a, L = df.lhs(F), df.rhs(F)
 
-    A = assemble(a, keep_diagonal=True)
+    A = df.assemble(a, keep_diagonal=True)
     [bc.apply(A) for bc in antiBCs]
-    b = assemble(L)
+
+    b = df.assemble(L)
     [bc.apply(b) for bc in antiBCs]
-    solve(A, En.vector(), b, 'gmres', 'hypre_amg')
+
+    df.solve(A, En.vector(), b, "gmres", "hypre_amg")
+
     return En

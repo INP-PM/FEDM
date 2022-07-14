@@ -308,8 +308,8 @@ redE.assign(project(1e21*sqrt(dot(-grad(Phi), -grad(Phi)))/N0, solver_type='mump
 redE_old.assign(redE)  # Updating reduced electric field in previous time step
 
 # Calculating transport and rate coefficients using linear interpolation
-Transport_coefficient_interpolation('initial', mobility_dependence, N0, Tgas, mu, mu_x, mu_y, mean_energy, redE, mu, Te = 0)  # Mobilities interpolation
-Transport_coefficient_interpolation('initial', Diffusion_dependence, N0, Tgas, D, D_x, D_y, mean_energy, redE, mu, Te = 0)  # Diffusion coefficients interpolation
+Transport_coefficient_interpolation('initial', mobility_dependence, N0, Tgas, mu, mu_x, mu_y, mean_energy, redE, mu)  # Mobilities interpolation
+Transport_coefficient_interpolation('initial', Diffusion_dependence, N0, Tgas, D, D_x, D_y, mean_energy, redE, mu)  # Diffusion coefficients interpolation
 Rate_coefficient_interpolation('initial', k_dependence, rate_coefficient, k_x, k_y, mean_energy, redE, Te = 0, Tgas = 0)  # Rates coefficients interpolation
 
 rate_coefficient_si = semi_implicit_coefficients(k_dependence, mean_energy_e, mean_energy_old, rate_coefficient, rate_coefficient_diff)

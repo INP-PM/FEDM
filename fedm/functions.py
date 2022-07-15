@@ -1027,81 +1027,96 @@ def adaptive_solver(
     # If an exception is raised, or the error is too large, reset and try again with
     # a smaller time step.
     # Force exit the program if dt < dt_min
-    while True:
-        try:
-            # Updating time step
-            t += dt.time_step
+    try:
+        # Updating time step
+        t += dt.time_step
 
-            # Updating time dependent expressions, if there are any.
-            if time_dependent_arguments is not None:
-                for arg in time_dependent_arguments:
-                    arg.t = t
+        # Updating time dependent expressions, if there are any.
+        if time_dependent_arguments is not None:
+            for arg in time_dependent_arguments:
+                arg.t = t
 
-            # solving the equation
-            nonlinear_solver.solve(problem, u_new.vector())
+        # solving the equation
+        nonlinear_solver.solve(problem, u_new.vector())
 
-            # assigning newly calculated values to post-processing variablables
-            assigner.assign(var_list_new, u_new)
+        # assigning newly calculated values to post-processing variablables
+        assigner.assign(var_list_new, u_new)
 
-            # Error estimation.
-            # Depending on the used approximation, it is determined from electron
-            # energy density, electron number density or, if nothing is specified as
-            # an argument, from all the variables solved for.
-            if approximation == "LMEA" or approximation == "LFA":
-                idx = 0 if approximation == "LMEA" else -2
-                var_new, var_old = var_list_new[idx], var_list_old[idx]
-            else:
-                var_new, var_old = u_new, u_old
-            # l2_norm(t, dt.time_step, we_newV, we_oldV)
-            error[0] = df.norm(
-                var_new.vector() - var_old.vector() + df.DOLFIN_EPS
-            ) / df.norm(var_old.vector() + df.DOLFIN_EPS)
+        # Error estimation.
+        # Depending on the used approximation, it is determined from electron
+        # energy density, electron number density or, if nothing is specified as
+        # an argument, from all the variables solved for.
+        if approximation == "LMEA" or approximation == "LFA":
+            idx = 0 if approximation == "LMEA" else -2
+            var_new, var_old = var_list_new[idx], var_list_old[idx]
+        else:
+            var_new, var_old = u_new, u_old
+        # l2_norm(t, dt.time_step, we_newV, we_oldV)
+        error[0] = df.norm(
+            var_new.vector() - var_old.vector() + df.DOLFIN_EPS
+        ) / df.norm(var_old.vector() + df.DOLFIN_EPS)
 
-            # Writing relative error to file
-            file_error.write(
-                f"{error[0]:<23}  {dt_old.time_step:<23}  {dt.time_step:<23}\n"
+        # Writing relative error to file
+        file_error.write(
+            f"{error[0]:<23}  {dt_old.time_step:<23}  {dt.time_step:<23}\n"
+        )
+        file_error.flush()
+        max_error[0] = max(error)  # finding maximum error
+
+        # If maximum error is greater than the time stepping tolerance, the
+        # variables are reset to previous time step and calculations are repeated
+        # with the reduced time step size.
+        if error[0] >= ttol:
+            raise ErrorGreaterThanTTOL
+
+    except Exception as exc:
+        # Reseting time step to the previous time step
+        t -= dt.time_step
+
+        # Reducing time-step size and print error msg to screen
+        if isinstance(exc, ErrorGreaterThanTTOL):
+            dt.time_step *= 0.5 * ttol / max_error[0]
+            print_rank_0(
+                "Residual is greater than the prescribed tolerance. Reducing "
+                "time-step size and repeating calculation."
             )
-            file_error.flush()
-            max_error[0] = max(error)  # finding maximum error
+        else:
+            dt.time_step *= 0.5
+            print_rank_0(
+                "An exception was raised while solving. Reducing time-step size "
+                "and repeating calculation."
+            )
 
-            # If maximum error is greater than the time stepping tolerance, the
-            # variables are reset to previous time step and calculations are repeated
-            # with the reduced time step size.
-            if error[0] >= ttol:
-                raise ErrorGreaterThanTTOL
+        # If it's too small, force close program
+        if dt.time_step < dt_min:
+            raise SystemExit("Minimum time-step size reached, program is terminating.")
 
-            # If we get this far, break out of the while loop and exit function
-            break
+        # reseting variables to the previous time step
+        u_new.assign(u_old)
 
-        except Exception as exc:
-            # Reseting time step to the previous time step
-            t -= dt.time_step
+        # assigning reset values to post-processing variablables
+        assigner.assign(var_list_new, u_new)
 
-            # Reducing time-step size and print error msg to screen
-            if isinstance(exc, ErrorGreaterThanTTOL):
-                dt.time_step *= 0.5 * ttol / max_error[0]
-                print_rank_0(
-                    "Residual is greater than the prescribed tolerance. Reducing "
-                    "time-step size and repeating calculation."
-                )
-            else:
-                dt.time_step *= 0.5
-                print_rank_0(
-                    "An exception was raised while solving. Reducing time-step size "
-                    "and repeating calculation."
-                )
-
-            # If it's too small, force close program
-            if dt.time_step < dt_min:
-                raise SystemExit(
-                    "Minimum time-step size reached, program is terminating."
-                )
-
-            # reseting variables to the previous time step
-            u_new.assign(u_old)
-
-            # assigning reset values to post-processing variablables
-            assigner.assign(var_list_new, u_new)
+        # Call self with args reset and new time step
+        t = adaptive_solver(
+            nonlinear_solver,
+            problem,
+            t,
+            dt,
+            dt_old,
+            u_new,
+            u_old,
+            var_list_new,
+            var_list_old,
+            assigner,
+            error,
+            file_error,
+            max_error,
+            ttol,
+            dt_min,
+            time_dependent_arguments,
+            approximation,
+        )
 
     # Return the new time step
     return t

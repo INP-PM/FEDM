@@ -3,28 +3,13 @@
 import warnings
 from typing import List, Tuple, Any, Optional, Union
 from pathlib import Path
-from io import TextIOWrapper
+from textwrap import dedent
 
 import dolfin as df
 import numpy as np
 
 from .physical_constants import elementary_charge, kB, kB_eV
-
-
-def print_rank_0(*args, **kwargs):
-    """
-    Utility function, print to terminal if MPI rank 0, otherwise do nothing.
-    """
-    if df.MPI.rank(df.MPI.comm_world) == 0:
-        print(*args, **kwargs)
-
-
-def quoted(strings: List[str]) -> List[str]:
-    """
-    Utility function, takes a list of strings and returns the same list with each
-    string starting and ending with a single-quote character.
-    """
-    return [f"'{string}'" for string in strings]
+from .utils import print_rank_0, comma_separated
 
 
 def modify_approximation_vars(
@@ -41,11 +26,14 @@ def modify_approximation_vars(
     """
     approximation_types = ["LFA", "LMEA"]
     if approximation_type not in approximation_types:
-        raise ValueError(
-            "fedm.modify_approximation_vars: The approximation type "
-            f"'{approximation_type}' is not recognised. Must be one of "
-            f"{', '.join(quoted(approximation_types))}."
+        err_msg = dedent(
+            f"""\
+            fedm.modify_approximation_vars: The approximation type {approximation_type}
+            is not recognised. Must be one of {comma_separated(approximation_types)}.
+            """
         )
+        raise ValueError(err_msg.rstrip().replace("\n", " "))
+
     # IF LFA, remove the first species from each list
     if approximation_type == "LFA":
         number_of_species -= 1
@@ -55,30 +43,6 @@ def modify_approximation_vars(
     # Number of equations should be 1 more than the number of species in each case
     number_of_eq = number_of_species + 1
     return number_of_species, number_of_eq, particle_species, masses, charges
-
-
-def mesh_statistics(mesh: df.Mesh) -> None:
-    """
-    Returns mesh size and, maximum and minimum element size.
-    Input is mesh.
-    """
-    mesh_dir = Path("output/mesh")
-    vtkfile_mesh = df.File(str(mesh_dir / "mesh.pvd"))
-    vtkfile_mesh.write(mesh)
-    n_element = df.MPI.sum(df.MPI.comm_world, mesh.num_cells())
-    # measures the greatest distance between any two vertices of a cell
-    hmax = df.MPI.max(df.MPI.comm_world, mesh.hmax())
-    # measures the smallest distance between any two vertices of a cell
-    hmin = df.MPI.min(df.MPI.comm_world, mesh.hmin())
-    if df.MPI.rank(df.MPI.comm_world) == 0:
-        info_str = (
-            f"Number of elements is: {int(n_element)}\n"
-            f"Maximum element edge length is: {hmax:.5g}\n"
-            f"Minimum element edge length is: {hmin:.5g}"
-        )
-        print(info_str)
-        with open(mesh_dir / "mesh info.txt", "w") as mesh_information:
-            mesh_information.write(info_str + "\n")
 
 
 class CircleSubDomain(df.SubDomain):
@@ -147,10 +111,13 @@ def Marking_boundaries(
             r1, r2 = boundary[3] - eps, boundary[4] + eps
             bmark = LineSubDomain((r1, r2), (z1, z2))
         else:
-            raise ValueError(
-                f"fedm.Marking_boundaries: Invalid boundary_type '{boundary_type}'. "
-                "Possible values are 'circle', 'line'."
+            err_msg = dedent(
+                f"""\
+                fedm.Marking_boundaries: Invalid boundary_type '{boundary_type}'.
+                Possible values are 'circle', 'line'.
+                """
             )
+            raise ValueError(err_msg.rstrip().replace("\n", " "))
 
         bmark.mark(boundary_markers, idx)
 
@@ -193,10 +160,13 @@ def Function_definition(
         "Function": df.Function,
     }
     if function_type not in functions:
-        raise ValueError(
-            f"fedm.Function_definition: Invalid function_type '{function_type}'. "
-            f"Possible values are {', '.join(quoted(functions))}."
+        err_msg = dedent(
+            f"""\
+            fedm.Function_definition: Invalid function_type '{function_type}'.
+            Possible values are {comma_separated(functions)}.
+            """
         )
+        raise ValueError(err_msg.rstrip().replace("\n", " "))
     function = functions[function_type]
     return [function(function_space) for _ in range(eq_number)]
 
@@ -359,35 +329,40 @@ def weak_form_balance_equation(
     """
     equation_types = ["reaction", "diffusion-reaction", "drift-diffusion-reaction"]
     if equation_type not in equation_types:
-        raise ValueError(
-            "fedm.weak_form_balance_equation_log_representation: The equation type "
-            f"'{equation_type}' is not recognised. Must be one of "
-            f"{', '.join(quoted(equation_types))}."
+        err_msg = dedent(
+            f"""\
+            fedm.weak_form_balance_equation_log_representation: The equation type
+            {equation_type}' is not recognised. Must be one of
+            {comma_separated(equation_types)}.
+            """
         )
+        raise ValueError(err_msg.rstrip().replace("\n", " "))
+
     if equation_type == "diffusion-reaction" and D is None:
         raise ValueError(
             "fedm.weak_form_balance_equation_log_representation: When 'equation_type' "
             "is diffusion-reaction, must also supply the diffusion coefficient 'D'."
         )
     # tr = timestep_ratio
-    tr = dt / dt_old
-    trp1 = tr + 1.0
-    tr2p1 = 2.0 * tr + 1.0
+    tr =  dt / dt_old
+    trp1 = 1.0 + tr
+    tr2p1 = 1.0 + 2.0 * tr
     # If logarithmic, we include a factor of exp(u) in the integral
     expu_or_1 = df.exp(u) if log_representation else 1.0
     # Standard part
-    result = expu_or_1 * (u * tr2p1 - u_old * trp1**2.0 + u_old1 * tr**2.0) / trp1
-    result *= v / dt
+    u_part = (u * tr2p1 - trp1**2.0 * u_old + tr**2.0 * u_old1) / trp1
+    balance_eq = 2.0 * df.pi * (expu_or_1 * u_part * v / dt) * r * dx
     # Source terms
-    result -= v * f
+    source = 2.0 * df.pi * v * f * r * dx
     # Diffusion terms
+    diff = 0.0
     if equation_type == "diffusion-reaction":
         expu_or_u = df.exp(u) if log_representation else u
-        result -= df.dot(-df.grad(D * expu_or_u), df.grad(v))
+        diff = 2.0 * df.pi * df.dot(-df.grad(D * expu_or_u), df.grad(v)) * r * dx
     if equation_type == "drift-diffusion-reaction":
-        result -= df.dot(Gamma, df.grad(v))
+        diff = 2.0 * df.pi * df.dot(Gamma, df.grad(v)) * r * dx
     # Return with integral bits
-    return 2.0 * df.pi * r * result * dx
+    return balance_eq - diff - source
 
 
 def weak_form_balance_equation_log_representation(*args, **kwargs) -> df.Form:
@@ -501,17 +476,23 @@ def Boundary_flux(
         bc_type = bc_type.replace("_", " ")
 
     if bc_type not in bc_types:
-        raise ValueError(
-            f"fedm.Boundary_flux: boundary condition type '{bc_type}' not recognised. "
-            f"Must be one of {', '.join(quoted(bc_types))}."
+        err_msg = dedent(
+            f"""\
+            fedm.Boundary_flux: boundary condition type '{bc_type}' not recognised.
+            Must be one of {comma_separated(bc_types)}.
+            """
         )
+        raise ValueError(err_msg.rstrip().replace("\n", " "))
 
     # Only raise error on bad 'equation_type' if the value is needed
     if bc_type != "zero flux" and equation_type not in equation_types:
-        raise ValueError(
-            f"fedm.Boundary_flux: equation type '{equation_type}' not recognised. "
-            f"Must be one of {', '.join(quoted(equation_types))}."
+        err_msg = dedent(
+            f"""\
+            fedm.Boundary_flux: equation type '{equation_type}' not recognised.
+            Must be one of {comma_separated(equation_types)}.
+            """
         )
+        raise ValueError(err_msg.rstrip().replace("\n", " "))
 
     # Only raise error on bad 'particle_type' if the value is needed
     if (
@@ -519,10 +500,13 @@ def Boundary_flux(
         and equation_type == "diffusion-reaction"
         and particle_type not in particle_types
     ):
-        raise ValueError(
-            f"fedm.Boundary_flux: particle type '{particle_type}' not recognised. "
-            f"Must be one of {', '.join(quoted(particle_types))}."
+        err_msg = dedent(
+            f"""\
+            fedm.Boundary_flux: particle type '{particle_type}' not recognised.
+            Must be one of {comma_separated(particle_types)}.
+            """
         )
+        raise ValueError(err_msg.rstrip())
 
     if bc_type == "flux source" and equation_type != "reaction":
         result = (1.0 - ref) / (1.0 + ref)
@@ -597,18 +581,23 @@ def Transport_coefficient_interpolation(
     possible_dependences = [0, "const", "Umean", "E/N", "ESR", "Tgas"]
 
     if status not in possible_statuses:
-        raise ValueError(
-            f"fedm.Transport_coefficient_interpolation: status '{status}' not "
-            f"recognised. Must be one of {', '.join(quoted(possible_statuses))}."
+        err_msg = dedent(
+            f"""\
+            fedm.Transport_coefficient_interpolation: status '{status}' not recognised.
+            Must be one of {comma_separated(possible_statuses)}.
+            """
         )
+        raise ValueError(err_msg.rstrip().replace("\n", " "))
 
     for dependence in dependences:
         if dependence not in possible_dependences:
-            raise ValueError(
-                "fedm.Transport_coefficient_interpolation: "
-                f"dependence '{dependence}' not recognised. "
-                f"Must be one of {', '.join(quoted(possible_dependences))}."
+            err_msg = dedent(
+                f"""\
+                fedm.Transport_coefficient_interpolation: dependence '{dependence}' not
+                recognised. Must be one of {comma_separated(possible_dependences)}.
+                """
             )
+            raise ValueError(err_msg.rstrip().replace("\n", " "))
 
     # Handle case when mu's are not provided
     if mus is None:
@@ -708,14 +697,14 @@ def Rate_coefficient_interpolation(
     if status not in possible_statuses:
         raise ValueError(
             f"fedm.Rate_coefficient_interpolation: status '{status}' not recognised. "
-            f"Must be one of {', '.join(quoted(possible_statuses))}."
+            f"Must be one of {comma_separated(possible_statuses)}."
         )
 
     for dependence in dependences:
         if dependence not in possible_dependences:
             raise ValueError(
                 f"fedm.Rate_coefficient_interpolation: dependence '{dependence}' not "
-                f"recognised. Must be one of {', '.join(quoted(possible_dependences))}."
+                f"recognised. Must be one of {comma_separated(possible_dependences)}."
             )
 
     # Ensure all args have the correct lengths
@@ -731,7 +720,12 @@ def Rate_coefficient_interpolation(
             k_coeff.vector()[:] = ky
         # Catch both 'fun:Te,Tgas' and 'fun:Tgas'
         elif dependence[:3] == "fun" and status == "initial":
-            k_coeff = eval(ky)
+            try:
+                k_coeff = eval(ky)
+            except Exception as exc:
+                raise RuntimeError(
+                    "fedm.Rate_coefficient_interpolation: ky eval failed"
+                ) from exc
         # For 'Te', only do something if status is 'update'
         elif dependence == "Te" and status == "update":
             k_coeff.vector()[:] = np.interp(
@@ -960,7 +954,7 @@ def adaptive_solver(
     var_list_old: List[Any],  # List from Function definition
     assigner: df.FunctionAssigner,
     error: List[float],
-    file_error: TextIOWrapper,  # File handle
+    error_file: Path,
     max_error: List[float],
     ttol: float,
     dt_min: float,
@@ -994,8 +988,8 @@ def adaptive_solver(
         Assigns values between variables
     error: List[float]
         Record of errors
-    file_error: TextIOWrapper
-        File handle for error file
+    error_file: Path
+        Error file name
     max_error: List[float]
         Maximum errors
     ttol: float
@@ -1057,11 +1051,12 @@ def adaptive_solver(
         ) / df.norm(var_old.vector() + df.DOLFIN_EPS)
 
         # Writing relative error to file
-        file_error.write(
-            f"{error[0]:<23}  {dt_old.time_step:<23}  {dt.time_step:<23}\n"
-        )
-        file_error.flush()
-        max_error[0] = max(error)  # finding maximum error
+        with open(error_file, "a") as f_err:
+            f_err.write(f"{error[0]:<23}  {dt_old.time_step:<23}  {dt.time_step:<23}\n")
+            f_err.flush()
+
+        # Update maximum error
+        max_error[0] = max(error)
 
         # If maximum error is greater than the time stepping tolerance, the
         # variables are reset to previous time step and calculations are repeated
@@ -1110,7 +1105,7 @@ def adaptive_solver(
             var_list_old,
             assigner,
             error,
-            file_error,
+            error_file,
             max_error,
             ttol,
             dt_min,

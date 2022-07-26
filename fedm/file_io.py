@@ -1,540 +1,539 @@
 # Input and output module
 
-from dolfin import *
-import numpy as np
-import csv
 import re
-import os
+import itertools
+from pathlib import Path
+from textwrap import dedent
+from typing import List, Any
 
-level = 40 #False | 10 | 13 | 16 | 20 | 30| 40 | 50
-set_log_level(level)
+from .utils import comma_separated, print_rank_0, mesh_info
 
-output_folder_path = os.path.join(os.getcwd(), 'output')
-os.makedirs(output_folder_path, exist_ok=True)
-file_error = open('output/relative error.log', 'w')
-model_logging = open('output/model.log', 'w')
+import numpy as np
+import pandas as pd
+import dolfin as df
 
-def output_files(file_type, Type_of_output, output_file_names):
+# TODO This could be set via a 'verbose' argument to a solver.
+level = 40  # False | 10 | 13 | 16 | 20 | 30| 40 | 50
+df.set_log_level(level)
+
+input_folder_path = Path.cwd() / "file_input"
+output_folder_path = Path.cwd() / "output"
+output_folder_path.mkdir(exist_ok=True)
+
+error_file = output_folder_path / "relative error.log"
+model_log = output_folder_path / "model.log"
+
+# If files already exist, truncate them
+for f in [error_file, model_log]:
+    if f.exists():
+        with open(f, "w"):
+            pass
+
+
+def no_convert(x: Any) -> Any:
     """
-    Creates desired number of output files.
-    Input parameters are Type of output, which is used
-    as the name of folder where the files are saved, and
-    output_file_names which are used to create subfolder
-    and vtk files of the same name.
+    This utility function is used in functions that may optionally try to convert
+    inputs to a given type. 'no_convert' may be used in place of 'float', 'str', etc
+    to prevent the function from converting types.
     """
-    number_of_output_files = len(output_file_names)
-    if file_type == 'pvd':
-        f_out = []
-        i = 0
-        while (i < number_of_output_files):
-            file_path = 'output/' + Type_of_output + '/' + output_file_names[i] + '/' + output_file_names[i] + '.pvd'
-            f_out.append(File(file_path))
-            i += 1
-    elif file_type == 'xdmf':
-        f_out = []
-        i = 0
-        while (i < number_of_output_files):
-            file_path = 'output/' + Type_of_output + '/' + output_file_names[i] + '/' + output_file_names[i] + '.xdmf'
-            f_out.append(XDMFFile(file_path))
-            f_out[i].parameters['flush_output'] = True
-            i += 1
-    return f_out
+    return x
 
-def decomment(csvfile):
+
+def decomment(lines: List[str]) -> str:
     """
-    Removes comments from input files.
-    csvfile is the file name
+    Removes comment at end of each line, denoted with '#'. If the line is blank, or the
+    line starts with a '#', returns an empty string. Works as a generator function.
     Code snippet addapted from:
     https://stackoverflow.com/questions/14158868/python-skip-comment-lines-marked-with-in-csv-dictreader
     """
-    for row in csvfile:
-        raw = row.split('#')[0].strip()
-        if raw: yield raw
+    for line in lines:
+        line = line.split("#", 1)[0].strip()
+        if line:
+            yield line
 
-def Num_of_columns(file_name):
-    """
-    Returns number of columns.
-    Input parameter is file name.
-    """
-    with open(file_name, 'r', encoding = 'utf8') as f_input:
-        csv_input = csv.reader(decomment(f_input), delimiter=' ', skipinitialspace=True)
-        n = 0
-        for row in csv_input:
-            n += 1
-        return n
 
-def Read_One_Column_File(file_name):
+def output_files(
+    file_type: str, type_of_output: str, output_file_names: List[str]
+) -> List[Any]:
     """
-    Reads one column file.
-    Input parameter is file name.
-    """
-    with open(file_name, 'r', encoding = 'utf8') as f_input:
-        csv_input = csv.reader(decomment(f_input), delimiter=' ', skipinitialspace=True)
-        y = []
-        for cols in csv_input:
-            y.append(float(cols[0]))
-    return y
+    Creates desired number of output files.
 
-def Read_constant(file_name):
+    Parameters
+    ----------
+    file_type: str
+        'pvd' or 'xdmf'
+    type_of_output: str
+        Name of folder where files should be saved
+    output_file_names
+        List of files to create
+    """
+    if file_type not in ["pvd", "xdmf"]:
+        err_msg = dedent(
+            f"""
+            fedm.output_files: file type '{file_type}' is not valid. Options are
+            'pvd' or 'xdmf'.
+            """
+        )
+        raise ValueError(err_msg.rstrip().replace("\n", " "))
+
+    FileType = df.File if file_type == "pvd" else df.XDMFFile
+    output_dir = output_folder_path / type_of_output
+
+    file_paths = [
+        FileType(str(output_dir / file_name / f"{file_name}.{file_type}"))
+        for file_name in output_file_names
+    ]
+
+    if file_type == "xdmf":
+        for f in file_paths:
+            f.parameters["flush_output"] = True
+
+    return file_paths
+
+
+def read_single_value(file_name, convert=no_convert):
     """
     Reads file containing only constant.
     Input parameter is file name.
     """
-    with open(file_name, 'r', encoding = 'utf8') as f_input:
-        for line in f_input:
-            line = line.split('#',1)[0].strip()
-            if not line:
-                continue
-            y = line
-    return float(y)
+    with open(file_name, "r", encoding="utf8") as f_input:
+        # Finds first non-comment and non-blank line, passes through convert function
+        return convert(next(decomment(f_input)))
+    raise RuntimeError(f"fedm.read_single_value: No value found in file '{file_name}'")
 
-def Read_One_Column_String_File(file_name):
+
+def read_single_float(file_name, convert=no_convert):
+    """
+    Reads file containing only constant.
+    Input parameter is file name.
+    """
+    return read_single_value(file_name, convert=float)
+
+
+def read_single_string(file_name):
     """
     Reads file containing one column.
     Input parameter is file name.
     """
-    with open(file_name, 'r', encoding = 'utf8') as f_input:
-        for line in f_input:
-            line = line.split('#',1)[0].strip()
-            if not line:
-                continue
-            y = line
-    return y
+    return read_single_value(file_name, convert=str)
 
-def Read_Two_Column_File(file_name):
+
+def read_and_decomment(file_name: str) -> List[str]:
+    """
+    Reads file, returns list of strings. Comment lines and blank lines are removed.
+    """
+    with open(file_name, "r") as f_input:
+        return [line for line in decomment(f_input)]
+
+
+def read_two_columns(file_name):
     """
     Reads two column files.
     Input parameter is file name.
     """
-    with open(file_name, 'r', encoding = 'utf8') as f_input:
-        csv_input = csv.reader(decomment(f_input), delimiter=' ', skipinitialspace=True)
-        x = []
-        y = []
-        i = 0
-        for cols in csv_input:
-            x.append(float(cols[0]))
-            y.append(float(cols[1]))
-    return x, y
+    data = pd.read_csv(file_name, comment="#", header=None, sep=r"\s+", dtype=float)
+    # TODO test if we can avoid list conversions
+    return list(data[0]), list(data[1])
 
-def flatten(input):
+
+def flatten(input_list: List[List[Any]]) -> List[Any]:
     """
     Reduces 2D list to 1D list.
-
     """
-    new_list = []
-    for i in input:
-        for j in i:
-            new_list.append(j)
+    return itertools.chain.from_iterable(input_list)
 
-    return new_list
 
-def flatten_float(input):
+def flatten_float(input_list: List[List[Any]]) -> List[float]:
     """
     Reduces 2D list to 1D list and converts elements to float.
     """
-    new_list = []
-    for i in input:
-        for j in i:
-            new_list.append(float(j))
-    return new_list
+    return [float(x) for x in flatten(input_list)]
+
 
 def read_speclist(file_path):
     """
     Function reads list of species from 'speclist.cfg' file
     and extracts species names and species properties filename.
     """
-    lin = []
-    x = []
 
-    file_name = file_path + '/speclist.cfg'
-    with open(file_name, 'r') as f_input:
-        for line in f_input:
-            line = line.split('#',1)[0].strip()
-            if not line:
-                continue
-            if "file:" in line:
-                lin.append(line)
+    file_name = Path(file_path) / "speclist.cfg"
 
-    i = 0
-    while i < len(lin):
-        lin[i] = lin[i].replace("file:","")
-        x.append(lin[i].split())
-        i += 1
+    # Get all lines from the file which have 'file:' in them
+    # Remove the "file:" from the line, and split by whitespace
+    lines = [line for line in read_and_decomment(file_name) if "file:" in line]
 
-    y = []
-    i = 0
-    while i < len(x):
-        y.append(x[i][1].split('.'))
-        i += 1
+    # remove "file:" from each line and split by whitespace
+    lines = [line.replace("file:", "").split() for line in lines]
 
-    species_name = []
-    species_properties_file_name = []
-    species_name_tc = []
+    # Get data to return
+    species_names = [line[0] for line in lines]
+    species_properties_file_names = [line[1] for line in lines]
+    species_name_tc = [line[1].split(".")[0] for line in lines]
+    p_num = len(species_names)
 
-    i = 0
-    while i < len(x):
-        species_name.append(x[i][0])
-        species_properties_file_name.append(x[i][1])
-        species_name_tc.append(y[i][0])
-        i += 1
+    return p_num, species_names, species_properties_file_names, species_name_tc
 
-    p_num = len(species_name)
-    return p_num, species_name, species_properties_file_name, species_name_tc
 
-def reaction_matrices(path, species):
+def reaction_matrices(path: str, species: List[str]):
     """
-    Reads the reaction scheme from "reacscheme.cfg" file
-    and creates power, loss and gain matrices.
+    Reads the reaction scheme from "reacscheme.cfg" file and creates power, loss and
+    gain matrices.
     """
 
-    file_name = path + '/reacscheme.cfg'
+    file_name = Path(path) / "reacscheme.cfg"
 
-    lin = []
+    reactions = [line.partition(" Type:")[0] for line in read_and_decomment(file_name)]
+    loss = [reaction.partition(" -> ")[0].rstrip() for reaction in reactions]
+    gain = [reaction.partition(" -> ")[2].rstrip() for reaction in reactions]
 
-    with open(file_name, 'r') as f_input:
-        for line in f_input:
-            line = line.split('#',1)[0].strip()
-            if not line:
-                continue
-            lin.append(line)
+    l_matrix = np.empty([len(reactions), len(species)], dtype=int)
+    g_matrix = np.empty([len(reactions), len(species)], dtype=int)
+    for i, j in itertools.product(range(len(reactions)), range(len(species))):
+        l_matrix[i, j] = loss[i].count(species[j])
+        g_matrix[i, j] = gain[i].count(species[j])
 
-    reaction = []
-    rest = []
-    loss = []
-    gain = []
-
-    i = 0
-    while i < len(lin):
-        reaction.append(lin[i].partition(' Type:')[0])
-        rest.append(lin[i].partition(' Type:')[2])
-        loss.append(reaction[i].partition(' -> ')[0])
-        gain.append(reaction[i].partition(' -> ')[2])
-        loss[i] = loss[i].rstrip()
-        gain[i] = gain[i].rstrip()
-        i += 1
-
-    power_matrix = np.zeros([len(reaction), len(species)], dtype = int)
-    loss_matrix = np.zeros([len(reaction), len(species)], dtype = int)
-    gain_matrix = np.zeros([len(reaction), len(species)], dtype = int)
-    l_matrix = np.zeros([len(reaction), len(species)], dtype = int)
-    g_matrix = np.zeros([len(reaction), len(species)], dtype = int)
-    lg_matrix = np.zeros([len(reaction), len(species)], dtype = int)
-
-    i = 0
-    while i < len(reaction):
-        j = 0
-        while j < len(species):
-            power_matrix[i, j] = power_matrix[i, j] + loss[i].count(species[j])
-            l_matrix[i, j] = l_matrix[i, j] + int(loss[i].count(species[j]))
-            g_matrix[i, j] = g_matrix[i, j] + int(gain[i].count(species[j]))
-            j += 1
-        i += 1
-
+    power_matrix = l_matrix
     lg_matrix = l_matrix - g_matrix
+    loss_matrix = np.where(lg_matrix > 0, lg_matrix, 0)
+    gain_matrix = np.where(lg_matrix < 0, -lg_matrix, 0)
 
-    i = 0
-    while i < len(reaction):
-        j = 0
-        while j < len(species):
-            loss_matrix[i, j] = max(lg_matrix[i, j], 0)
-            gain_matrix[i, j] = -min(lg_matrix[i, j], 0)
-            j += 1
-        i += 1
     return power_matrix, loss_matrix, gain_matrix
+
 
 def rate_coefficient_file_names(path):
     """
     Reads names of reaction coefficient files from "reacscheme.cfg" file.
     Input parameter is the path to the folder.
     """
-    lin = []
 
-    file_name = path + '/reacscheme.cfg'
-    rate_coefficient_folder_path = path + '/rate_coefficients/'
-    with open(file_name, 'r') as f_input:
-        for line in f_input:
-            line = line.split('#',1)[0].strip()
-            if not line:
-                continue
-            lin.append(line)
+    file_name = Path(path) / "reacscheme.cfg"
+    rate_coefficient_dir_path = Path(path) / "rate_coefficients"
 
-    rcfn = []
-    regex = re.compile(r'kfile: ([A-Za-z0-9_]+.[A-Za-z0-9_]+)')
+    lines = read_and_decomment(file_name)
+    regex = re.compile(r"kfile: ([A-Za-z0-9_]+.[A-Za-z0-9_]+)")
+    rcfns = flatten([regex.findall(line) for line in lines])
+    return [rate_coefficient_dir_path / rcfn for rcfn in rcfns]
 
-    i = 0
-    while i < len(lin):
-        rcfn.append(regex.findall(lin[i]))
-        i += 1
-    rcfn = flatten(rcfn)
-    i = 0
-    while i < len(rcfn):
-        rcfn[i] = rate_coefficient_folder_path + rcfn[i]
-        i += 1
-    return rcfn
 
 def energy_loss(path):
     """
     Reads energy loss values from "reacscheme.cfg" file.
     Input argument is the path to the folder.
     """
-    lin = []
 
-    file_name = path +  '/reacscheme.cfg'
+    file_name = Path(path) / "reacscheme.cfg"
+    lines = read_and_decomment(file_name)
 
-    with open(file_name, 'r', encoding = 'utf8') as f_input:
-        for line in f_input:
-            line = line.split('#',1)[0].strip()
-            if not line:
-                continue
-            lin.append(line)
+    regex = re.compile(r"Uin:\s?([+-]?\d+.\d+[eE]?[-+]?\d+|0|1.0)")
+    energy_loss_value = flatten([regex.findall(line) for line in lines])
+    energy_loss_value = [float(x) for x in energy_loss_value]
 
-    energy_loss_value = []
-    regex = re.compile('Uin:\s?([+-]?\d+.\d+[eE]?[-+]?\d+|0|1.0)')
-
-    i = 0
-    while i < len(lin):
-        energy_loss_value.append(regex.findall(lin[i]))
-        i += 1
-    energy_loss_value = flatten(energy_loss_value)
-    i = 0
-    while i < len(energy_loss_value):
-        energy_loss_value[i] = float(energy_loss_value[i])
-        i += 1
-    if(MPI.rank(MPI.comm_world)==0):
-        print(energy_loss_value)
+    print_rank_0(energy_loss_value)
     return energy_loss_value
 
-def dependence(file_name):
+
+def read_dependence(file_name: str):
     """
     Reads dependence of rate coefficients from the corresponding file.
     """
-    nr = len(file_name)
-    x =[0]*nr
-    i = 0
-    while i <  nr:
-        lin = []
-        with open(file_name[i], 'r', encoding = 'utf8') as f_input:
-            for line in f_input:
-                if not line:
-                    continue
-                if "Dependence:" in line:
-                    lin.append(line.split()[2])
-        x[i] = lin[0]
-        i += 1
-    return x
+    with open(file_name, "r", encoding="utf8") as f_input:
+        for line in f_input:
+            if "Dependence:" in line:
+                return line.split()[2]
+    raise RuntimeError(
+        f"fedm.read_dependence: Did not find dependence in file '{file_name}'"
+    )
 
-def read_rate_coefficients(rate_coefficient_file_names, k_dependence):
+
+def dependence(file_names: List[str]):
+    """
+    Reads dependence of rate coefficients from a list of corresponding files.
+    """
+    return [read_dependence(file_name) for file_name in file_names]
+
+
+def read_rate_coefficients(rc_file_names: List[str], k_dependences: List[str]):
     """
     Reading rate coefficients from files. Input
     are file names and dependences.
     """
-    number_of_reactions = len(rate_coefficient_file_names)
-    k_x = [0]*number_of_reactions
-    k_y = [0]*number_of_reactions
-    i = 0
-    while i < number_of_reactions:
-        if(MPI.rank(MPI.comm_world)==0):
-            print(rate_coefficient_file_names[i])
-        if k_dependence[i] == 'const':
-            k_x[i] = 0.0
-            k_y[i] = Read_constant(rate_coefficient_file_names[i])
-        elif k_dependence[i] == 'Umean':
-            k_x[i], k_y[i] = Read_Two_Column_File(rate_coefficient_file_names[i])
-        elif k_dependence[i] == 'E/N':
-            k_x[i], k_y[i] = Read_Two_Column_File(rate_coefficient_file_names[i])
-        elif k_dependence[i] == 'fun:Te,Tgas':
-            k_x[i] = 0.0
-            k_y[i] = Read_One_Column_String_File(rate_coefficient_file_names[i])
-            k_y[i] = str(k_y[i])
-        elif k_dependence[i] == 'fun:Tgas':
-            k_x[i] = 0.0
-            k_y[i] = Read_One_Column_String_File(rate_coefficient_file_names[i])
-            k_y[i] = str(k_y[i])
-            # k_y[i] = eval(k_y[i])
-        elif k_dependence[i] == 'ElecDist':
-            k_x[i], k_y[i] = Read_Two_Column_File(rate_coefficient_file_names[i])
-        i += 1
-    return k_x, k_y
+    if len(rc_file_names) != len(k_dependences):
+        raise ValueError(
+            "fedm.read_rate_coefficients: rc_file_names and k_dependences should be "
+            "the same length."
+        )
 
-def reading_transport_coefficients(particle_names, type, model):
+    float_deps = ["const"]
+    str_deps = ["fun:Te,Tgas", "fun:Tgas"]
+    two_col_deps = ["Umean", "E/N", "ElecDist"]
+    all_deps = float_deps + str_deps + two_col_deps
+    for dependence in k_dependences:
+        if dependence not in all_deps:
+            raise ValueError(
+                f"fedm.read_rate_coefficients: The dependence '{dependence}' is not "
+                f"recognised. Options are {comma_separated(all_deps)}."
+            )
+
+    k_xs, k_ys = [], []
+    for dependence, rc_file_name in zip(k_dependences, rc_file_names):
+        print_rank_0(rc_file_name)
+        if dependence in two_col_deps:
+            k_x, k_y = read_two_columns(rc_file_name)
+        else:
+            convert = float if dependence in float_deps else str
+            k_x, k_y = 0.0, read_single_value(rc_file_name, convert=convert)
+        k_xs.append(k_x)
+        k_ys.append(k_y)
+    return k_xs, k_ys
+
+
+def read_transport_coefficients(
+    particle_names: List[str], transport_type: str, model: str
+):
     """
     Reading transport coefricients from files. Input are
     particle names, type of transport coefficient (diffusion or mobility)
     and model.
     """
-    path = 'file_input/' + model +'/transport_coefficients/'
-    number_of_particles = len(particle_names)
-    k_x = [0]*number_of_particles
-    k_y = [0]*number_of_particles
-    k_dependence = [0]*number_of_particles
-    i = 0
-    while i < number_of_particles:
-        if type == 'Diffusion':
-            file_name = path + particle_names[i] + '_ND.dat'
-            if(MPI.rank(MPI.comm_world)==0):
-                print(file_name)
-            lin = []
-            with open(file_name, 'r') as f_input:
-                for line in f_input:
-                    if not line:
-                        continue
-                    if "Dependence:" in line:
-                        lin.append(line.split()[2])
-            k_dependence[i] = lin[0]
-            if k_dependence[i] == 'const':
-                k_x[i] = 0.0
-                k_y[i] = Read_constant(file_name)
-            elif k_dependence[i] == 'Umean':
-                k_x[i], k_y[i] = Read_Two_Column_File(file_name)
-            elif k_dependence[i] == 'E/N':
-                k_x[i], k_y[i] = Read_Two_Column_File(file_name)
-            elif k_dependence[i] == 'fun:Te,Tgas':
-                k_x[i] = 0.0
-                k_y[i] = Read_One_Column_String_File(file_name)
-                k_y[i] = eval(k_y[i])
-            elif k_dependence[i] == 'Tgas':
-                k_x[i], k_y[i] = Read_Two_Column_File(file_name)
-            elif k_dependence[i] == 'Te':
-                k_x[i], k_y[i] = Read_Two_Column_File(file_name)
-            elif k_dependence[i] == 'ESR':
-                k_x[i] = 0.0
-                k_y[i] = 0.0
-            elif k_dependence[i] == 'fun:E':
-                k_x[i] = 0.0
-                k_y[i] = Read_One_Column_String_File(file_name)
+    path = input_folder_path / model / "transport_coefficients"
+    if not path.is_dir():
+        raise RuntimeError(
+            f"fedm.read_transport_coefficients: Transport coeff dir '{path}' not found."
+        )
 
-        elif type == 'mobility':
-            file_name = path + particle_names[i] + '_Nb.dat'
-            if(MPI.rank(MPI.comm_world)==0):
-                print(file_name)
-            if os.path.isfile(file_name):
-                k_dependence[i] = 0
-                lin = []
-                with open(file_name, 'r') as f_input:
-                    for line in f_input:
-                        if not line:
-                            continue
-                        if "Dependence:" in line:
-                            lin.append(line.split()[2])
-                k_dependence[i] = lin[0]
-                if k_dependence == 'const':
-                    k_x[i] = 0.0
-                    k_y[i] = Read_constant(file_name)
-                elif k_dependence[i] == 'Umean':
-                    k_x[i], k_y[i] = Read_Two_Column_File(file_name)
-                elif k_dependence[i] == 'E/N':
-                    k_x[i], k_y[i] = Read_Two_Column_File(file_name)
-                elif k_dependence[i] == 'fun:Te,Tgas':
-                    k_x[i] = 0.0
-                    k_y[i] = Read_One_Column_String_File(file_name)
-                    k_y[i] = eval(k_y[i])
-                elif k_dependence[i] == 'Tgas':
-                    k_x[i], k_y[i] = Read_Two_Column_File(file_name)
-                elif k_dependence[i] == 'Te':
-                    k_x[i], k_y[i] = Read_Two_Column_File(file_name)
-                elif k_dependence[i] == 'fun:E':
-                    k_x[i] = 0.0
-                    k_y[i] = Read_One_Column_String_File(file_name)
-        i += 1
+    float_deps = ["const"]
+    str_deps = ["fun:Te,Tgas", "fun:E"]
+    two_col_deps = ["Umean", "E/N", "Tgas", "Te"]
+    dependences = float_deps + str_deps + two_col_deps
+    if transport_type == "Diffusion":
+        dependences += "ESR"
+
+    k_xs = []
+    k_ys = []
+    k_dependence = []
+    for particle in particle_names:
+        # Get file name
+        file_suffix = "_ND.dat" if transport_type == "Diffusion" else "_Nb.dat"
+        file_name = path / (particle + file_suffix)
+        if not file_name.is_file():
+            raise RuntimeError(
+                f"fedm.read_transport_coefficients: file '{file_name}' not found."
+            )
+        print_rank_0(file_name)
+
+        # Get dependence from file
+        dependence = read_dependence(file_name)
+        if dependence not in dependences:
+            err_msg = dedent(
+                f"""\
+                fedm.read_transport_coefficients: Dependence '{dependence}' not
+                recognised. For the transport type '{transport_type}', the possible
+                options are {comma_separated(dependences)}.
+                """
+            )
+            raise RuntimeError(err_msg.rstrip().replace("\n", " "))
+
+        # Set kx and ky
+        if dependence in two_col_deps:
+            k_x, k_y = read_two_columns(file_name)
+        elif dependence == "ESR":
+            k_x, k_y = 0.0, 0.0
+        else:
+            convert = float if dependence in float_deps else str
+            k_x, k_y = 0.0, read_single_value(file_name, convert=convert)
+
+        if dependence == "fun:Te,Tgas":
+            try:
+                k_y_str = k_y  # save reference in case we need it in an error message
+                k_y = eval(k_y)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"fedm.read_transport_coefficients: k_y eval failed, '{k_y_str}'"
+                ) from exc
+
+        k_xs.append(k_x)
+        k_ys.append(k_y)
+        k_dependence.append(dependence)
+
     return k_x, k_y, k_dependence
 
-def read_particle_properties(fn, model):
+
+def read_particle_properties(file_names: List[str], model: str):
     """
     Reads particle properties from input file.
-    Input are file name and model.
+    Input are file names and model.
     """
-    path = 'file_input/' + model +'/species/'
-    if (MPI.rank(MPI.comm_world) == 0):
-        print(fn)
-    number_of_particles = len(fn)
-    M = []
-    charge = []
-    i = 0
-    while i < number_of_particles:
-        file_name = path + fn[i]
-        if (MPI.rank(MPI.comm_world) == 0):
-            print(file_name)
+    path = input_folder_path / model / "species"
 
-        regex_mass = re.compile('Mass\s?=\s?([+-]?\d+.\d+[eE]?[-+]?\d+|0|1.0)')
-        regex_charge = re.compile('Z\s+?=\s+?([+-]?\d+)')
-        lin = []
-        with open(file_name, 'r') as f_input:
-            for line in f_input:
-                line = line.split('#',1)[0].strip()
-                if not line:
-                    continue
-                lin.append(line)
-        M_temp = []
-        charge_temp = []
-        j = 0
-        while j < len(lin):
-            if (MPI.rank(MPI.comm_world) == 0):
-                print(lin[j])
-            M_temp.append(regex_mass.findall(lin[j]))
-            charge_temp.append(regex_charge.findall(lin[j]))
-            j += 1
-        M.append(float(M_temp[1][0]))
-        charge.append(float(charge_temp[0][0]))
-        i += 1
-    return M, charge
+    masses, charges = [], []
+    regex_mass = re.compile(r"Mass\s?=\s?([+-]?\d+.\d+[eE]?[-+]?\d+|0|1.0)")
+    regex_charge = re.compile(r"Z\s+?=\s+?([+-]?\d+)")
+
+    for file_name in file_names:
+        # Get full file name, test if file exists
+        file_name = path / file_name
+        if not file_name.is_file():
+            raise RuntimeError(
+                f"fedm.read_particle_properties: File '{file_name}' not found."
+            )
+        print_rank_0(file_name)
+
+        # Read file
+        lines = read_and_decomment(file_name)
+
+        # Get mass and charge from file
+        mass_found, charge_found = False, False
+        for line in lines:
+            print_rank_0(line)
+            mass, charge = regex_mass.findall(line), regex_charge.findall(line)
+            if mass:
+                mass_found = True
+                masses.append(float(mass[0]))
+            if charge:
+                charge_found = True
+                charges.append(float(charge[0]))
+        if not mass_found:
+            raise RuntimeError(
+                f"fedm.read_particle_properties: No mass found in file '{file_name}'."
+            )
+        if not charge_found:
+            raise RuntimeError(
+                f"fedm.read_particle_properties: No charge found in file '{file_name}'."
+            )
+
+    return masses, charges
+
 
 def print_time_step(dt):
     """
     Prints time step.
     """
-    if(MPI.rank(MPI.comm_world)==0):
-        print("Time step is dt =", dt)
+    print_rank_0("Time step is dt =", dt)
+
 
 def print_time(t):
     """
     Prints time.
     """
-    if(MPI.rank(MPI.comm_world)==0):
-        print("t =", t)
+    print_rank_0("t =", t)
 
-def file_output(t, t_old, t_out, step, t_out_list, step_list, file_type, output_file_list, particle_name, u_old, u_old1, unit = 's'):
+
+def file_output(
+    t,
+    t_old,
+    t_out,
+    step,
+    t_out_list,
+    step_list,
+    file_type,
+    output_file_list,
+    particle_name,
+    u_old,
+    u_old1,
+    unit="s",
+):
     """
-    Writing value of desired variable to file. Value is calculated by linear interpolation.
-    Input arguments are current time step, previous time step, current time step length,
-    previous time step length, list of output times, list of steps (which needs have same size),
-    list of output files, list of variable values in current and previous time steps, and
-    (optional) units of time.
+    Writing value of desired variable to file. Value is calculated by linear
+    interpolation.  Input arguments are current time step, previous time step, current
+    time step length, previous time step length, list of output times, list of steps
+    (which needs have same size), list of output files, list of variable values in
+    current and previous time steps, and (optional) units of time.
     """
-    if unit == 'ns':
-        scale = 1e9
-    elif unit == 'us':
-        scale = 1e6
-    elif unit == 'ms':
-        scale = 1e3
-    elif unit == 's':
-        scale = 1.0
+    units = {
+        "ns": 1e9,
+        "us": 1e6,
+        "ms": 1e3,
+        "s": 1.0,
+    }
+
+    try:
+        scale = units[unit]
+    except KeyError:
+        err_msg = dedent(
+            f"""\
+            fedm.file_output: unit '{unit}' not valid.
+            Options are {comma_separated(list(units))}.'
+            """
+        )
+        raise ValueError(err_msg.rstrip().replace("\n", " "))
 
     if t > max(t_out_list):
         index = len(t_out_list) - 1
     else:
-        index = next(x for x, val in enumerate(t_out_list)
-                                          if val > t)
-    while t >= t_out:
-        no_files = len(output_file_list)
-        i = 0
-        while i < no_files:
-            temp = Function(u_old1[i].function_space())
-            temp.vector()[:] = u_old1[i].vector()[:] + (t_out - t_old)*(u_old[i].vector()[:] - u_old1[i].vector()[:])/(t - t_old)
-            if file_type[i] == 'pvd':
+        index = next(x for x, val in enumerate(t_out_list) if val > t)
+
+    if t_out <= 0.999 * t_out_list[index - 1]:
+        err_msg = dedent(
+            f"""\
+            fedm.file_output: Invalid t_out value.
+            Must be greater than 0.999 * t_out_list[index - 1]
+            t_out = {t_out:.5e}
+            t = {t:.5e}
+            t_out_list[index-1] = {t_out_list[index-1]:.5e}
+            t_out_list[index] = {t_out_list[index]:.5e}
+            """
+        )
+        raise ValueError(err_msg.rstrip())
+
+    while t_out <= t:
+        for i in range(len(output_file_list)):
+            temp = df.Function(u_old1[i].function_space())
+            temp.vector()[:] = u_old1[i].vector()[:] + (t_out - t_old) * (
+                u_old[i].vector()[:] - u_old1[i].vector()[:]
+            ) / (t - t_old)
+            if file_type[i] == "pvd":
                 temp.rename(particle_name[i], str(i))
-                output_file_list[i] << (temp, t_out*scale)
-            elif file_type[i] == 'xdmf':
-                output_file_list[i].write_checkpoint(temp, particle_name[i], t_out*scale, XDMFFile.Encoding.HDF5, True)  #appending to file
-            i += 1
-        # print(str(out_index))
-        if t_out >= 0.999*t_out_list[index-1] and t_out < 0.999*t_out_list[index]:
-            step = step_list[index-1]
-        elif t_out >= 0.999*t_out_list[index]:
+                # TODO find functional version of this, avoid C++ operator overloads
+                output_file_list[i] << (temp, t_out * scale)
+            elif file_type[i] == "xdmf":
+                # appending to file
+                output_file_list[i].write_checkpoint(
+                    temp,
+                    particle_name[i],
+                    t_out * scale,
+                    df.XDMFFile.Encoding.HDF5,
+                    True,
+                )
+            else:
+                err_msg = dedent(
+                    f"""\
+                    fedm.file_output: file type '{file_type}' not recognised.
+                    Options are 'pvd' and 'xdmf'.
+                    """
+                )
+                raise ValueError(err_msg.rstrip().replace("\n", " "))
+
+        if t_out >= 0.999 * t_out_list[index - 1] and t_out < 0.999 * t_out_list[index]:
+            step = step_list[index - 1]
+        else:  # t_out >= 0.999*t_out_list[index]:
             step = step_list[index]
         t_out += step
     return t_out, step
 
-def log(type, log_file, *arg):
+
+def mesh_statistics(mesh: df.Mesh) -> None:
+    """
+    Returns mesh size and, maximum and minimum element size.
+    Input is mesh.
+    """
+    mesh_dir = Path("output/mesh")
+    vtkfile_mesh = df.File(str(mesh_dir / "mesh.pvd"))
+    vtkfile_mesh.write(mesh)
+    info_str = mesh_info(mesh)
+    if df.MPI.rank(df.MPI.comm_world) == 0:
+        print(info_str.rstrip())
+        with open(mesh_dir / "mesh info.txt", "w") as mesh_information:
+            mesh_information.write(info_str)
+
+
+def numpy_2d_array_to_str(x: np.ndarray) -> str:
+    # Remove '[' and  ']' from str representation
+    no_brackets = str(np.asarray(x)).replace("[", "").replace("]", "")
+    # Remove extra whitespace on each line, return
+    return "\n".join([y.strip() for y in no_brackets.split("\n")])
+
+
+def log(log_type, log_file_name, *args):
     """
     The function is used to log model data and its progress.
     The input arguments vary depending on the type of logging.
@@ -549,88 +548,72 @@ def log(type, log_file, *arg):
     For type = time, input argument is time.
     For type = mesh, input argument is mesh.
     """
-    if(MPI.rank(MPI.comm_world)==0):
-        if type == 'properties':
-            gas  = arg[0]
-            model = arg[1]
-            particle_species_file_names = arg[2]
-            M = arg[3]
-            charge = arg[4]
-            log_file.write('Gas:\t' + gas + '\n\n' + 'model:\t' + model + '\n' + '\nParticle names: \n' + str(particle_species_file_names) + '\n' + '\nMass:  \n' + str(M) + '\n' + '\nCharge: \n' + str(charge) + '\n' + '\n')
-            log_file.flush()
 
-        elif type == 'conditions':
-            dt_var = arg[0]
-            U_w = arg[1]
-            p0 = arg[2]
-            gap_length = arg[3]
-            N0 = arg[4]
-            Tgas = arg[5]
-            log_file.write('Simulation conditions:\n' + 'dt = ' + str(dt_var) + ' s' + '\t U_w = ' + str(U_w) + ' V'  + '\t p_0 = ' + str(p0) + ' Torr' + '\t d = ' +  str(gap_length) + ' m' + '\t N_0 = ' +  str(N0) + ' m^-3' + '\t T_gas = ' +  str(Tgas) + ' K' + '\n\n')
-            log_file.flush()
-        elif type == 'matrices':
-            gain = arg[0]
-            loss = arg[1]
-            power = arg[2]
-            n_g_rows = gain.shape[1]
-            n_g_columns = gain.shape[0]
-            n_l_rows = loss.shape[1]
-            n_l_columns = loss.shape[0]
-            n_p_rows = power.shape[1]
-            n_p_columns = power.shape[0]
-            log_file.write('Gain matrix:' + '\n')
-            i = 0
-            while i < n_g_columns:
-                j=0
-                while j < n_g_rows:
-                    log_file.write(str(gain[i][j]))
-                    j += 1
-                log_file.write('\n')
-                i += 1
-            log_file.write('\n')
-            log_file.write('Loss matrix:' + '\n')
-            i = 0
-            while i < n_l_columns:
-                j=0
-                while j < n_l_rows:
-                    log_file.write(str(loss[i][j]))
-                    j += 1
-                log_file.write('\n')
-                i += 1
-            log_file.write('\n')
-            log_file.write('Power matrix:' + '\n')
-            i = 0
-            while i < n_p_columns:
-                j=0
-                while j < n_p_rows:
-                    log_file.write(str(power[i][j]))
-                    j += 1
-                log_file.write('\n')
-                i += 1
-            log_file.write('\n')
-            log_file.flush()
+    if df.MPI.rank(df.MPI.comm_world) != 0:
+        return
 
-        elif type == 'initial time':
-            t = arg[0]
-            log_file.write('Time:\n' + str(t) + '\n')
-            log_file.flush()
+    if log_type == "properties":
+        gas, model, particle_species_file_names, M, charge = args
+        log_str = dedent(
+            f"""\
+            Gas:\t{gas}
 
-        elif type == 'time':
-            t = arg[0]
-            log_file.write(str(t) + '\n')
-            log_file.flush()
-    if type == 'mesh':
-        mesh = arg[0]
-        n_element = MPI.sum(MPI.comm_world, mesh.num_cells())
-        #measures the greatest distance between any two vertices of a cell
-        hmax = MPI.max(MPI.comm_world, mesh.hmax())
-        #measures the smallest distance between any two vertices of a cell
-        hmin = MPI.min(MPI.comm_world, mesh.hmin())
-        if(MPI.rank(MPI.comm_world)==0):
-            log_file.write("Number of elements in the mesh is: ")
-            print("%.*g" % (5, n_element), file = log_file)
-            log_file.write("Maximum element edge length is: ")
-            print("%.*g" % (5, hmax), file=log_file)
-            log_file.write("Minimum element edge length is: ")
-            print("%.*g" % (5, hmin), file=log_file)
-            log_file.write('\n')
+            model:\t{model}
+
+            Particle names:
+            {particle_species_file_names}
+
+            Mass:
+            {M}
+
+            Charge:
+            {charge}
+            """
+        )
+    elif log_type == "conditions":
+        dt_var, U_w, p0, gap_length, N0, Tgas = args
+        log_str = dedent(
+            f"""\
+            dt = {dt_var} s,
+            U_w = {U_w} V,
+            p_0 = {p0} Torr,
+            d = {gap_length} m,
+            N_0 = {N0} m^-3,
+            T_gas = {Tgas} K
+            """
+        )
+        log_str = log_str.rstrip().replace("\n", "\t ")
+        log_str = f"Simulation conditions:\n{log_str}\n"
+    elif log_type == "matrices":
+        gain, loss, power = args
+        log_str = dedent(
+            f"""\
+            Gain matrix:
+            {numpy_2d_array_to_str(gain)}
+
+            Loss matrix:
+            {numpy_2d_array_to_str(loss)}
+
+            Power matrix:
+            {numpy_2d_array_to_str(power)}
+            """
+        )
+    elif log_type == "initial time":
+        log_str = f"Time:\n{args[0]}"
+    elif log_type == "time":
+        log_str = str(args[0])
+    elif log_type == "mesh":
+        log_str = mesh_info(args[0])
+    else:
+        err_msg = dedent(
+            f"""\
+            fedm.log: log_type '{log_type}' not recognised. Options are 'properties',
+            'conditions', 'matrices', 'initial time', 'time', or 'mesh'
+            """
+        )
+        raise ValueError(err_msg.rstrip().replace("\n", " "))
+
+    with open(log_file_name, "a") as log_file:
+        log_file.write(log_str)
+        log_file.write("\n")
+        log_file.flush()

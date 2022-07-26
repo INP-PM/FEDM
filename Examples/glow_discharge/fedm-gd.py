@@ -44,7 +44,7 @@ p0 = 1.0   #[Torr]
 N0 = p0*3.21877e22  #[m^-3]
 U_w  = -250.0   #[V]
 approximation = 'LMEA'  # Type of approximation used in the model
-path = 'file_input/' + model  # Path where input files for desired model are stored
+path = input_folder_path() / model  # Path where input files for desired model are stored
 file_type = 'pvd'
 
 # ============================================================================
@@ -145,8 +145,8 @@ gamma_metallic = 0.06  # Secondary electron emission coefficient for metalic sur
 gamma = [gamma_metallic, gamma_metallic, 0, 0]  # List of secondary emission coefficients for the given boundaries
 we_metalic = 5.0  # Mean energy of secondary emitted electrons [eV]
 
-log('conditions', model_log, dt.time_step, U_w, p0, gap_length, N0, Tgas)  # Writting simulation conditions to log file
-log('properties', model_log, gas, model, particle_species_file_names, M, charge)  # Writting particle properties into a log file
+log('conditions', model_log(), dt.time_step, U_w, p0, gap_length, N0, Tgas)  # Writting simulation conditions to log file
+log('properties', model_log(), gas, model, particle_species_file_names, M, charge)  # Writting particle properties into a log file
 
 # ===========================================================================================================================
 # Mesh setup and boundary measure redefinition. Structured mesh is generated using built-in mesh generator
@@ -154,15 +154,15 @@ log('properties', model_log, gas, model, particle_species_file_names, M, charge)
 mesh_plasma = RectangleMesh(Point(0, 0), Point(wall, gap_length), 100, 100, "crossed")  # Generating structured triangular mesh
 
 mesh_statistics(mesh_plasma)  # Prints number of elements, minimum and maximum cell diameter
-log('mesh', model_log, mesh_plasma)  # Writting mesh statistcs to the log file
+log('mesh', model_log(), mesh_plasma)  # Writting mesh statistcs to the log file
 
 boundary_mesh_function = Marking_boundaries(mesh_plasma, boundaries)  # Marking boundaries required for boundary conditions
 ds_plasma = Measure('ds', domain = mesh_plasma, subdomain_data = boundary_mesh_function)  # Boundary measure redefinition
 normal_plasma = FacetNormal(mesh_plasma)  # Boundary normal
 
 File('output/mesh/boundary_mesh_function.pvd') << boundary_mesh_function  # Writting boundary mesh function to file
-log('matrices', model_log, gain_matrix, loss_matrix, power_matrix)  # Writting the reaction matrices that determine rates and source term
-log('initial time', model_log, t)  # Time logging
+log('matrices', model_log(), gain_matrix, loss_matrix, power_matrix)  # Writting the reaction matrices that determine rates and source term
+log('initial time', model_log(), t)  # Time logging
 
 # ============================================================================
 # Defining type of elements and function space, test functions, trial functions and functions for storing postprocessing variables.
@@ -437,9 +437,9 @@ while t < T_final:
     # ============================================================================
     # Solving the coupled equation ussing adaptive solver. The calculated values are assigned to the variables used for postprocessing.
     # ============================================================================
-    t = adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, variable_list_new, variable_list_old, assigner, error, error_file, max_error, ttol, dt_min, time_dependent_arguments = [Phi_powered], approximation = approximation)
+    t = adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, variable_list_new, variable_list_old, assigner, error, error_file(), max_error, ttol, dt_min, time_dependent_arguments = [Phi_powered], approximation = approximation)
 
-    log('time', model_log, t)  # Time logging
+    log('time', model_log(), t)  # Time logging
 
     mean_energy.vector()[:] = np.exp(we_newV.vector()[:] - u_newV[number_of_species-1].vector()[:])  # Mean energy calculations
 

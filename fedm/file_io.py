@@ -1,5 +1,6 @@
 # Input and output module
 
+import warnings
 import re
 import itertools
 from pathlib import Path
@@ -16,19 +17,55 @@ import dolfin as df
 level = 40  # False | 10 | 13 | 16 | 20 | 30| 40 | 50
 df.set_log_level(level)
 
-input_folder_path = Path.cwd() / "file_input"
-output_folder_path = Path.cwd() / "output"
-output_folder_path.mkdir(exist_ok=True)
+# Functions for managing input/output files
 
-error_file = output_folder_path / "relative error.log"
-model_log = output_folder_path / "model.log"
+_input_dir = None
+_output_dir = None
+_error_file = None
+_model_log = None
 
-# If files already exist, truncate them
-for f in [error_file, model_log]:
-    if f.exists():
-        with open(f, "w"):
+def input_folder_path() -> Path:
+    global _input_dir
+    return _input_dir if _input_dir is not None else Path.cwd() / "file_input"
+
+def set_input_folder_path(path: Path) -> None:
+    global _input_dir
+    path = Path(path)
+    if not path.is_dir():
+        raise RuntimeError(f"fedm.set_input_folder_path: '{path}' is not a directory.")
+    _input_dir = path
+
+def output_folder_path() -> Path:
+    global _output_dir
+    return _output_dir if _output_dir is not None else Path.cwd() / "output"
+
+def set_output_folder_path(path: Path) -> None:
+    global _output_dir
+    path = Path(path)
+    if not path.is_dir():
+        path.mkdir()
+    _output_dir = path
+
+def error_file() -> Path:
+    global _error_file
+    if _error_file is None:
+        _error_file = output_folder_path() / "relative error.log"
+        # truncate file
+        with open(_error_file, 'w') as _:
             pass
+    return _error_file
 
+def model_log() -> Path:
+    global _model_log
+    if _model_log is None:
+        _model_log = output_folder_path() / "model.log"
+        # truncate file
+        with open(_model_log, 'w') as _:
+            pass
+    return _model_log
+
+
+# Utilities for use in this module
 
 def no_convert(x: Any) -> Any:
     """
@@ -51,6 +88,7 @@ def decomment(lines: List[str]) -> str:
         if line:
             yield line
 
+# file_io functions
 
 def output_files(
     file_type: str, type_of_output: str, output_file_names: List[str]
@@ -77,7 +115,7 @@ def output_files(
         raise ValueError(err_msg.rstrip().replace("\n", " "))
 
     FileType = df.File if file_type == "pvd" else df.XDMFFile
-    output_dir = output_folder_path / type_of_output
+    output_dir = output_folder_path() / type_of_output
 
     file_paths = [
         FileType(str(output_dir / file_name / f"{file_name}.{file_type}"))
@@ -295,7 +333,7 @@ def read_transport_coefficients(
     particle names, type of transport coefficient (diffusion or mobility)
     and model.
     """
-    path = input_folder_path / model / "transport_coefficients"
+    path = input_folder_path() / model / "transport_coefficients"
     if not path.is_dir():
         raise RuntimeError(
             f"fedm.read_transport_coefficients: Transport coeff dir '{path}' not found."
@@ -323,6 +361,14 @@ def read_transport_coefficients(
 
         # Get dependence from file
         dependence = read_dependence(file_name)
+
+        if dependence == "const.":
+            warnings.warn(
+                "fedm.read_transport_coefficients: 'const' dependence should be "
+                "written 'const', not 'const.'"
+            )
+            dependence = "const"
+
         if dependence not in dependences:
             err_msg = dedent(
                 f"""\
@@ -355,7 +401,7 @@ def read_transport_coefficients(
         k_ys.append(k_y)
         k_dependence.append(dependence)
 
-    return k_x, k_y, k_dependence
+    return k_xs, k_ys, k_dependence
 
 
 def read_particle_properties(file_names: List[str], model: str):
@@ -363,7 +409,7 @@ def read_particle_properties(file_names: List[str], model: str):
     Reads particle properties from input file.
     Input are file names and model.
     """
-    path = input_folder_path / model / "species"
+    path = input_folder_path() / model / "species"
 
     masses, charges = [], []
     regex_mass = re.compile(r"Mass\s?=\s?([+-]?\d+.\d+[eE]?[-+]?\d+|0|1.0)")
@@ -462,18 +508,6 @@ def file_output(
     else:
         index = next(x for x, val in enumerate(t_out_list) if val > t)
 
-    if t_out <= 0.999 * t_out_list[index - 1]:
-        err_msg = dedent(
-            f"""\
-            fedm.file_output: Invalid t_out value.
-            Must be greater than 0.999 * t_out_list[index - 1]
-            t_out = {t_out:.5e}
-            t = {t:.5e}
-            t_out_list[index-1] = {t_out_list[index-1]:.5e}
-            t_out_list[index] = {t_out_list[index]:.5e}
-            """
-        )
-        raise ValueError(err_msg.rstrip())
 
     while t_out <= t:
         for i in range(len(output_file_list)):
@@ -505,8 +539,9 @@ def file_output(
 
         if t_out >= 0.999 * t_out_list[index - 1] and t_out < 0.999 * t_out_list[index]:
             step = step_list[index - 1]
-        else:  # t_out >= 0.999*t_out_list[index]:
+        elif t_out >= 0.999*t_out_list[index]:
             step = step_list[index]
+        # FIXME undefined if t_out < 0.999 * t_out_list[index - 1], need else statement
         t_out += step
     return t_out, step
 
@@ -516,7 +551,7 @@ def mesh_statistics(mesh: df.Mesh) -> None:
     Returns mesh size and, maximum and minimum element size.
     Input is mesh.
     """
-    mesh_dir = Path("output/mesh")
+    mesh_dir = output_folder_path() / "mesh"
     vtkfile_mesh = df.File(str(mesh_dir / "mesh.pvd"))
     vtkfile_mesh.write(mesh)
     info_str = mesh_info(mesh)

@@ -41,6 +41,7 @@ After installing the Docker, the latest stable FEniCS image (currently FEniCS 20
 ```bash
 sudo docker run -ti \
     -v $(pwd):/home/fenics/shared \
+    -v /tmp \
     quay.io/fenicsproject/stable
 ```
 
@@ -52,6 +53,7 @@ sudo usermod -aG docker $USER # Add self to docker group
 # ... log out and log back in, or call `newgrp docker` ...
 docker run -ti \
     -v $(pwd):/home/fenics/shared \
+    -v /tmp \
     quay.io/fenicsproject/stable
 ```
 
@@ -107,7 +109,33 @@ or in parallel using MPI:
 mpirun –np 8 python3 fedm-name_of_example.py
 ```
 
-It should be noted that besides FEniCS, no additional dependencies are required. Note that the new experimental version FEniCSx 0.4 has been recently published, while the FEniCS 2019.1.0 is considered to be deprecated. Currently, there are no plans to update FEDM to be compatible with the newest version (at least until the stable FEniCSx version is published).
+Note that the new experimental version FEniCSx 0.4 has been recently published, while the FEniCS 2019.1.0 is considered to be deprecated. Currently, there are no plans to update FEDM to be compatible with the newest version (at least until the stable FEniCSx version is published).
+
+## Testing
+
+Testing must be performed within the Docker container. The testing dependencies should 
+be installed using:
+
+```bash
+python3 -m pip install --user .[tests]
+```
+
+The Python `vtk` library is needed to read output files, which in turn requires OpenGL,
+so you may need to install this:
+
+```bash
+sudo apt update
+sudo apt install libgl1
+```
+
+The tests are then run using pytest:
+
+```bash
+python3 -m pytest -v tests
+```
+
+The tests will run each of the integrated tests and store data in the container's `/tmp`
+directory. This is why the container must be run with `-v /tmp`.
 
 ## How to use?
 

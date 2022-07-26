@@ -1,0 +1,12 @@
+################################################################################
+#
+# Description: mobility
+# Species:     Ar^* (particle)
+# Data source: M. Becker et al. Comput. Phys. Commun. 180 (2009) 1230
+# Data:        const  N*D [1/(m s)]
+# Dependence:  const
+# Comment:
+#
+################################################################################
+
+1.738E+20

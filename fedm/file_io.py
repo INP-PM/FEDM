@@ -24,9 +24,11 @@ _output_dir = None
 _error_file = None
 _model_log = None
 
+
 def input_folder_path() -> Path:
     global _input_dir
     return _input_dir if _input_dir is not None else Path.cwd() / "file_input"
+
 
 def set_input_folder_path(path: Path) -> None:
     global _input_dir
@@ -35,9 +37,11 @@ def set_input_folder_path(path: Path) -> None:
         raise RuntimeError(f"fedm.set_input_folder_path: '{path}' is not a directory.")
     _input_dir = path
 
+
 def output_folder_path() -> Path:
     global _output_dir
     return _output_dir if _output_dir is not None else Path.cwd() / "output"
+
 
 def set_output_folder_path(path: Path) -> None:
     global _output_dir
@@ -46,6 +50,7 @@ def set_output_folder_path(path: Path) -> None:
         path.mkdir()
     _output_dir = path
 
+
 def error_file() -> Path:
     global _error_file
     # If we haven't set the global _error_file yet, or the output folder path has
@@ -53,22 +58,24 @@ def error_file() -> Path:
     if _error_file is None or _error_file.parent != output_folder_path():
         _error_file = output_folder_path() / "relative error.log"
         # truncate file
-        with open(_error_file, 'w') as _:
+        with open(_error_file, "w") as _:
             pass
-    
+
     return _error_file
+
 
 def model_log() -> Path:
     global _model_log
     if _model_log is None or _model_log.parent != output_folder_path():
         _model_log = output_folder_path() / "model.log"
         # truncate file
-        with open(_model_log, 'w') as _:
+        with open(_model_log, "w") as _:
             pass
     return _model_log
 
 
 # Utilities for use in this module
+
 
 def no_convert(x: Any) -> Any:
     """
@@ -91,7 +98,9 @@ def decomment(lines: List[str]) -> str:
         if line:
             yield line
 
+
 # file_io functions
+
 
 def output_files(
     file_type: str, type_of_output: str, output_file_names: List[str]
@@ -315,17 +324,17 @@ def read_rate_coefficients(rc_file_names: List[str], k_dependences: List[str]):
                 f"recognised. Options are {comma_separated(all_deps)}."
             )
 
-    k_xs, k_ys = [], []
+    kxs, kys = [], []
     for dependence, rc_file_name in zip(k_dependences, rc_file_names):
         print_rank_0(rc_file_name)
         if dependence in two_col_deps:
-            k_x, k_y = read_two_columns(rc_file_name)
+            kx, ky = read_two_columns(rc_file_name)
         else:
             convert = float if dependence in float_deps else str
-            k_x, k_y = 0.0, read_single_value(rc_file_name, convert=convert)
-        k_xs.append(k_x)
-        k_ys.append(k_y)
-    return k_xs, k_ys
+            kx, ky = 0.0, read_single_value(rc_file_name, convert=convert)
+        kxs.append(kx)
+        kys.append(ky)
+    return kxs, kys
 
 
 def read_transport_coefficients(
@@ -349,8 +358,8 @@ def read_transport_coefficients(
     if transport_type == "Diffusion":
         dependences += "ESR"
 
-    k_xs = []
-    k_ys = []
+    kxs = []
+    kys = []
     k_dependence = []
     for particle in particle_names:
         # Get file name
@@ -384,27 +393,27 @@ def read_transport_coefficients(
 
         # Set kx and ky
         if dependence in two_col_deps:
-            k_x, k_y = read_two_columns(file_name)
+            kx, ky = read_two_columns(file_name)
         elif dependence == "ESR":
-            k_x, k_y = 0.0, 0.0
+            kx, ky = 0.0, 0.0
         else:
             convert = float if dependence in float_deps else str
-            k_x, k_y = 0.0, read_single_value(file_name, convert=convert)
+            kx, ky = 0.0, read_single_value(file_name, convert=convert)
 
         if dependence == "fun:Te,Tgas":
             try:
-                k_y_str = k_y  # save reference in case we need it in an error message
-                k_y = eval(k_y)
+                ky_str = ky  # save reference in case we need it in an error message
+                ky = eval(ky)
             except Exception as exc:
                 raise RuntimeError(
-                    f"fedm.read_transport_coefficients: k_y eval failed, '{k_y_str}'"
+                    f"fedm.read_transport_coefficients: ky eval failed, '{ky_str}'"
                 ) from exc
 
-        k_xs.append(k_x)
-        k_ys.append(k_y)
+        kxs.append(kx)
+        kys.append(ky)
         k_dependence.append(dependence)
 
-    return k_xs, k_ys, k_dependence
+    return kxs, kys, k_dependence
 
 
 def read_particle_properties(file_names: List[str], model: str):
@@ -511,7 +520,6 @@ def file_output(
     else:
         index = next(x for x, val in enumerate(t_out_list) if val > t)
 
-
     while t_out <= t:
         for i in range(len(output_file_list)):
             temp = df.Function(u_old1[i].function_space())
@@ -542,7 +550,7 @@ def file_output(
 
         if t_out >= 0.999 * t_out_list[index - 1] and t_out < 0.999 * t_out_list[index]:
             step = step_list[index - 1]
-        elif t_out >= 0.999*t_out_list[index]:
+        elif t_out >= 0.999 * t_out_list[index]:
             step = step_list[index]
         # FIXME undefined if t_out < 0.999 * t_out_list[index - 1], need else statement
         t_out += step

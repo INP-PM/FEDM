@@ -344,7 +344,7 @@ def weak_form_balance_equation(
             "is diffusion-reaction, must also supply the diffusion coefficient 'D'."
         )
     # tr = timestep_ratio
-    tr =  dt / dt_old
+    tr = dt / dt_old
     trp1 = 1.0 + tr
     tr2p1 = 1.0 + 2.0 * tr
     # If logarithmic, we include a factor of exp(u) in the integral

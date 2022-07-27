@@ -1,0 +1,351 @@
+"""
+In this example the modeling of positive streamer in air, as described in Bagheri et al. Plasma Sources Sci. Technol. 27 (2018) 095002 is performed. The problem consists of
+solving Poisson's and balance equations for electrons and ions. The variational formulation of the code is automatized using custom made functions. The coupled i.e.
+fully implicit approach, consisting in solving all equations, at once is applied. In this case, rate and transport coefficients are given in a form of an expression, so
+all variables are defined in a same time step. The code has an option to automatize definition of rate and transport coefficients by importing them from external files.
+Moreover, the source term definition can be done by reading reaction scheme from file.
+"""
+from dolfin import *
+import numpy as np
+from timeit import default_timer as timer
+import time
+from pathlib import Path
+from argparse import ArgumentParser
+from fedm.physical_constants import *
+from fedm.file_io import *
+from fedm.functions import *
+
+def main(input_dir = None, output_dir = None):
+    if input_dir is not None:
+        set_input_folder_path(input_dir)
+    if output_dir is not None:
+        set_output_folder_path(output_dir)
+
+    #Optimization parameters
+    parameters["form_compiler"]["optimize"]     = True
+    parameters["form_compiler"]["cpp_optimize"] = True
+    parameters["std_out_all_processes"] = False
+    parameters['krylov_solver']['nonzero_initial_guess'] = True
+    parameters["form_compiler"]["quadrature_degree"] = 2
+
+    # Defining tye of used solver and its parameters.
+    linear_solver = "gmres" # Type of linear solver lu | mumps | gmres | bicgstab
+    maximum_iterations = 20
+    relative_tolerance = 1e-4
+
+    # ============================================================================
+    # Definition of the simulation conditions, model, approximation, coordinates and path for input files
+    # ============================================================================
+    model = 'benchmark_model'
+    coordinates = 'cylindrical'
+    gas = 'Air'
+    Tgas = 300.0 #[K]
+    p0 = 760.0 #[Torr]
+    N0 = p0*3.21877e22 #[m^-3]
+    U_w  = 18750.0  #[V]
+    approximation = 'LFA' # Type of approximation used in the model
+    path = input_folder_path() / model # Path where input files for desired model are stored
+
+    # ============================================================================
+    # Reading species list and particle properties, obtaining number of species for which the problem is solved and creating
+    #  output files.
+    # ============================================================================
+    number_of_species, particle_species, particle_prop, particle_species_file_names = read_speclist(path) # Reading species list to obtain number of species, their name and corresponding file names
+    M, sign = read_particle_properties(particle_prop, model)  # Reading particle properties from input files
+    equation_type = ['reaction', 'drift-diffusion-reaction'] # Defining the type of the equation (reaction | diffusion-reaction | drift-diffusion-reaction)
+    particle_species_type = ['Ions', 'electrons'] # Defining particle type required for boundary condition: Neutral | Ion | electrons
+
+    # Setting up number of equations for given approximation
+    number_of_species, number_of_equations, particle_species, M, sign = modify_approximation_vars(approximation, number_of_species, particle_species, M, sign)
+    charge = [i * elementary_charge for i in sign]
+
+    vtkfile_u = output_files('pvd', 'number density', particle_species_type) # Creates list of output files
+    vtkfile_Phi = output_files('pvd', 'potential', ['Phi']) # Creates list of output files
+    output_file_list = [vtkfile_Phi[0], vtkfile_u[0], vtkfile_u[1]] # Creates list of variables for output
+    file_type = ['pvd', 'pvd', 'pvd'] # creates list of variables for output
+
+    # ============================================================================
+    # Definition of the time variables and relative error used for adaptive time stepping.
+    # ============================================================================
+    t_old = None # Previous time step
+    t0 =  0.0 # Initial time step
+    t = t0 # Current time step
+    T_final = 1e-10 # Simulation time end [s]
+
+    dt_min = 1e-15 # Minimum time step [s]
+    dt_max = 5e-12 # Maximum time step [s]
+    dt_init = 5e-12 # Initial time step size [s]
+    dt_old_init = 1e30 # Initial time step size [s] setted up as extremely large value to initiate adaptive BDF2
+    dt = Expression("time_step", time_step = dt_init, degree = 0) # Time step size [s]
+    dt_old = Expression("time_step", time_step = dt_old_init, degree = 0) # Time step size expression [s], Initial value is set up to be large in order to reduce initial step of adaptive BDF formula to one.
+
+    ttol = 1e-3 # Tolerance for adaptive time stepping
+
+    ### Setting-up output times and time steps. t_output_list and t_output_step_list need to have same length
+    t_output_list = [1e-10, 1e-9] # List of time step intervals (consisting of two consecutive components) at which the results are printed to file
+    t_output_step_list = [1e-11, 1e-10, 1e-9] # List of time step sizes for corresponding interval
+    t_output_step = t_output_list[0] # Current time step at which the results are printed to file
+    t_output = t_output_step_list[0] # Current output time length
+
+    number_of_iterations = None # Nonlinear solver iteration number counter
+    convergence = None # Nonlinear solver convergence values True or False
+    error = [0.0]*number_of_species # List of error values for particle species
+    max_error = [1]*3 # List of maximum error values in current, k-1 and k-2 time steps
+
+    # ============================================================================
+    # Defining the geometry of the problem and corresponding boundaries.
+    # ============================================================================
+    if coordinates == 'cylindrical':
+        r = Expression('x[0]', degree = 1)
+        z = Expression('x[1]', degree = 1)
+
+    box_width = 0.0125  #[m]
+    box_height = 0.0125 #[m]
+    boundaries = [['line', 0.0, 0.0, 0.0, box_width],
+                  ['line', box_height, box_height, 0.0, box_width],
+                  ['line', 0.0, box_height, 0.0, 0.0],
+                  ['line', 0.0, box_height, box_width, box_width]]
+    bc_type = ["zero_flux", "Neumann"] # Boundary conditions for given particle
+    gamma = [0.0, 0.0] # Secondary electron emission coefficient
+
+    log('conditions', model_log(), dt.time_step, U_w, p0, box_height, N0, Tgas) # Writting simulation conditions to log file
+    log('properties', model_log(), gas, model, particle_species_file_names, M, charge) # Writting particle properties into a log file
+
+    # ===========================================================================================================================
+    # Mesh setup and boundary measure redefinition. Structured mesh is generated using built-in mesh generator
+    # ===========================================================================================================================
+    mesh = Mesh(str(Path(__file__).parent / 'mesh.xml')) # Importing mesh from xml file
+
+    mesh_statistics(mesh) # Prints number of elements, minimum and maximal cell diameter
+    log('mesh', model_log(), mesh) # Writting mesh statistcs to the log file
+
+    boundary_mesh_function = Marking_boundaries(mesh, boundaries) # Marking boundaries required for boundary conditions
+    normal = FacetNormal(mesh) # Boundary normal
+
+    File(str(output_folder_path() / 'mesh' / 'boundary_mesh_function.pvd')) << boundary_mesh_function # Writting boundary mesh function to file
+
+    log('initial time', model_log(), t) # Time logging
+
+    # ============================================================================
+    # Defining type of elements and function space, test functions, trial functions and functions for storing variables.
+    # ============================================================================
+    P1 = FiniteElement("Lagrange", mesh.ufl_cell(), 1) # Defining finite element and degree
+    Element_list = Mixed_element_list(number_of_equations, P1) # Creating list of elements
+    ME = FunctionSpace(mesh, MixedElement(Element_list)) # Defining mixed function space
+    V = FunctionSpace(mesh, P1) # Function space for post-processing
+    W = VectorFunctionSpace(mesh, 'P', 1) # Defining vector function space
+
+    assigner = FunctionAssigner(Function_space_list(number_of_equations, V), ME) # Assigning values of variables between ME and V function spaces
+    rev_assigner = FunctionAssigner(ME, Function_space_list(number_of_equations, V)) # Assigning values of variables between V and ME function spaces
+
+    temp_output_variable = Function(V)  # Temporary variable used for file output
+
+    # Defining variables for coupled approach
+    u = TrialFunction(ME) # Trial functions for mixed formulation
+    v = TestFunctions(ME) # Test functions for mixed formulation
+    u_new = Function(ME) # Functions for mixed formulation for current time step
+    u_old  = Function(ME) # Functions for mixed formulation for k-1 time step
+    u_old1  = Function(ME) # Functions for mixed formulation for k-2 time step
+
+    # Defining variables for solving initial Poisson's equation
+    PhiV = TrialFunction(V) # Trial functions for potential
+    vp = TestFunction(V) # Test functions for potential
+    Phi = Function(V) # Potential  in current time step
+    Phi_old = Function(V) # Potential in k-1 time step
+
+    #Defining variables for postprocessing
+    u_newV = Function_definition(V, 'Function', number_of_equations) # Number density in previous time step (Function return functions for desired number of particles)
+    u_oldV = Function_definition(V, 'Function', number_of_equations) # Number density in previous time step (Function return functions for desired number of particles)
+    u_old1V = Function_definition(V, 'Function', number_of_equations) # Number density in current time step (Function return functions for desired number of particles)
+    mu = Function_definition(V, 'Function', number_of_equations) # Defining variable for mobility
+    D = Function_definition(V, 'Function', number_of_equations) # Defining variable for diffusion coefficient
+    Gamma = Function_definition(V, 'Function', number_of_equations) # Defining list of variables for particle flux
+    f = Function_definition(V, 'Function', number_of_equations) # Defining list of variables for source term
+
+    # ============================================================================
+    # Setting up initial conditions
+    # ============================================================================
+    u_oldV[0] = interpolate(Expression('std::log(1e13+5e18*exp(-(pow(x[0], 2)+pow(x[1]-1e-2, 2))/pow(0.4e-3, 2)))', degree = 1), V)
+    u_oldV[1] = interpolate(Expression('std::log(1e13)', degree = 1), V)
+    u_newV[0] = interpolate(Expression('std::log(1e13+5e18*exp(-(pow(x[0], 2)+pow(x[1]-1e-2, 2))/pow(0.4e-3, 2)))', degree = 1), V)
+    u_newV[1] = interpolate(Expression('std::log(1e13)', degree = 1), V)
+
+    # Writing initial values to file
+    i = 0
+    while i < number_of_species:
+        temp_output_variable.assign(u_oldV[i]) # Setting value for output
+        temp_output_variable.rename(particle_species_file_names[i+1], str(i+1))  # Renaming variable for output
+        vtkfile_u[i] << (temp_output_variable, t) # Writting initial particle number densities to file
+        i += 1
+
+    # ===========================================================================================================================
+    # Solving initial Poisson equation to calculate the potential for the initial time step.
+    # The potential is required for interpolation of transport coefficients that depend on reduced electric field.
+    # ===========================================================================================================================
+    Phi_cathode = Constant(0.0) # Potential at the grounded electrode in [V]
+    Phi_anode = Constant(U_w) # Potential at the powered electrode in [V]
+
+    def Cathode(x, on_boundary):
+        if near(x[1], 0) and on_boundary:
+            return True
+
+    def Anode(x, on_boundary):
+        if near(x[1], box_height) and on_boundary:
+            return True
+
+    # Defining Dirichlet boundary conditions
+    potential_Cathode_bc = DirichletBC(V, Phi_cathode, Cathode)
+    potential_Anode_bc = DirichletBC(V, Phi_anode, Anode)
+    bcs_potential = [potential_Cathode_bc, potential_Anode_bc] # List of Dirichlet boundary conditions
+
+    potential_f = (exp(u_oldV[0]) - exp(u_oldV[1])) * elementary_charge/epsilon_0 # Poisson equation source term
+
+    # Definition variational formulation of Poisson equation for the initial time step
+    Fp = weak_form_Poisson_equation(dx, PhiV, vp, potential_f, r)
+    a, L = lhs(Fp), rhs(Fp)
+
+    # Creating lhs and rhs and setting boundary conditions
+    potential_A = assemble(a)
+    [bc.apply(potential_A) for bc in bcs_potential]
+    potential_b = assemble(L)
+    [bc.apply(potential_b) for bc in bcs_potential]
+
+    # Solving Poisson's equation for the initial time step
+    solve(potential_A, Phi.vector(), potential_b)
+
+    temp_output_variable.assign(Phi) # Setting value for output
+    vtkfile_Phi[0] << (temp_output_variable, t) # Writting the potential in intial time step to the output file
+
+    E = -grad(u[2]) # Setting up electric field
+    E_m = sqrt(inner(-grad(u[2]), -grad(u[2]))) # Setting up electric field magnitude
+
+    # Updating initail values
+    u_oldV[2].assign(Phi) # Updating initial value of potential
+    u_newV[2].assign(Phi) # Updating potential value
+
+    D_x, D_y, Diffusion_dependence = read_transport_coefficients(particle_species, 'Diffusion', model) # Reading diffusion coefficients from input files
+    mu_x, mu_y, mu_dependence = read_transport_coefficients(particle_species, 'mobility', model) # Reading mobilities from input files
+
+    # ============================================================================
+    # Definition of variational formulation for coupled approach
+    # ============================================================================
+    bc = [DirichletBC(ME.sub(2), Phi_cathode, Cathode), DirichletBC(ME.sub(2), Phi_anode, Anode)]  # Creating of the list of Dirichlet boundary conditions for Poisson equation in coupled approach
+
+    mu[0] = mu_y[0] # Setting up mobility for ions
+    D[0] = D_y[0] # Setting up diffusion coefficient for ions
+    mu[1] = eval(mu_y[1])  # Setting up mobility for electrons
+    D[1] = eval(D_y[1]) # Setting up diffusion coefficient for electrons
+    alpha = (1.1944e6 + 4.3666e26 * E_m**(-3))*exp(-2.73e7/E_m)-340.75 # Setting up ionization coefficient
+
+    Gamma[0] = 0.0 # Setting up ion flux
+    Gamma[1] = Flux_log(sign[1], u[1], D[1], mu[1], E) # Setting up electron flux
+
+    f[0] = alpha*mu[1]*E_m*exp(u[1]) # Ion source term definition
+    f[1] = alpha*mu[1]*E_m*exp(u[1]) # Electron source term definition
+    i = 0
+    while i < number_of_species:
+        f[2] += sign[i] * exp(u[i])* elementary_charge/epsilon_0 # Poisson's equation source term definition
+        i += 1
+
+
+    F = 0.0
+    # ============================================================================
+    # Defining variational formulation of the Poisson equation for the inital step
+    # ============================================================================
+    i = 0
+    while i < number_of_species:
+        F += weak_form_balance_equation_log_representation(equation_type[i], dt, dt_old, dx, u[i], u_old[i], u_old1[i], v[i], f[i], Gamma[i], r, D[i]) # Setting up variational formulation of electron energy balance equations
+        i += 1
+    F += weak_form_Poisson_equation(dx, u[number_of_equations - 1], v[number_of_equations - 1], f[number_of_equations - 1], r) # Adding Poisson equation variational formulation
+    # ===========================================================================================================================
+    # Setting Neumann boundary condition on all boundaries. For sepperate boundaries use ds(i), where i is boundary index.
+    # The index for each boundary can be seen by plotting boundary mesh function in paraview
+    # ===========================================================================================================================
+    i = 0
+    while i < number_of_species:
+        F += Boundary_flux(bc_type[i], equation_type[i], particle_species_type[i], sign[i], mu[i], E, normal, u[i], gamma[i], v[i], ds, r)
+        i += 1
+
+    # ============================================================================
+    # Defining list required for value assigning between function spaces and file output
+    # ============================================================================
+    variable_list_new = [u_newV[0], u_newV[1], u_newV[2]] #List of variables for easier assigning between function spaces
+    variable_list_old = [u_oldV[0], u_oldV[1], u_oldV[2]] # List of variables for easier assigning between function spaces
+    output_old_variable_list = [u_oldV[2], u_oldV[0], u_oldV[1]] # List of variables for file output
+    output_new_variable_list = [u_newV[2], u_newV[0], u_newV[1]] # List of variables for file output
+    output_files_variabe_names = ['Phi', particle_species_type[0], particle_species_type[1]]
+
+    rev_assigner.assign(u_old, variable_list_old) # Assigning values between function spaces in previous time step
+    rev_assigner.assign(u_new, variable_list_new) # Assigning values between function spaces in current time step
+
+    # ============================================================================
+    # Defining nonlinear problem and setting up solver
+    # ============================================================================
+    F = action(F, u_new)
+    J = derivative(F, u_new, u)
+
+    problem = Problem(J, F, bc)
+
+    ## Setting PETScSNESSolver and its parameters
+    nonlinear_solver = PETScSNESSolver()
+    nonlinear_solver.parameters['relative_tolerance'] = relative_tolerance
+    nonlinear_solver.parameters["linear_solver"]= linear_solver
+    nonlinear_solver.parameters["preconditioner"] = "hypre_amg" # setting the preconditioner, uncomment if iterative solver is used
+
+    # ============================================================================
+    # Time loop
+    # ============================================================================
+    while t < T_final*(1+1e-6):
+        t_old = t # Updating old time step
+        u_old1.assign(u_old)
+        u_old.assign(u_new)
+        assigner.assign(variable_list_old, u_old)
+
+        ## Solving problem with adaptive time step
+        t = adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, variable_list_new, variable_list_old, assigner, error, error_file(), max_error, ttol, dt_min, time_dependent_arguments = [], approximation = approximation)
+
+        ## For the constant time step, comment previous and  uncomment following code block
+        # t += dt.time_step
+        # try_except = True
+        #
+        # assigner.assign(var_list_new, u_new)
+        # with open(error_file(), "a") as f_err:
+        #     i = 0
+        #     while i < len(var_list_new) - 1:
+        #         # temp1 = project(exp(var_list_new[i]), solver_type = 'gmres')
+        #         # temp0 = project(exp(var_list_old[i]), solver_type = 'gmres')
+        #         # error[i] = l2_norm(t, dt.time_step, temp1, temp0)
+        #         error[i] = l2_norm(t, dt.time_step, var_list_new[i], var_list_old[i])
+        #         f_err.write("{:<23}".format(str(error[i])) + '  ')
+        #         i += 1
+        #     f_err.write("{:<23}".format(str(dt_old.time_step)) + '  ' + "{:<23}".format(str(dt.time_step)) + '\n')
+        #     f_err.flush()
+        # max_error[0] = max(error)
+
+        log('time', model_log(), t) # Time logging
+
+    # ============================================================================
+    # Time step refinement
+    # ============================================================================
+        dt_old.time_step = dt.time_step # Constant time step
+        dt.time_step = adaptive_timestep(dt.time_step, max_error, ttol, dt_min, dt_max) # Adaptive time step
+
+        # Updating maximum error in previous time steps
+        max_error[2] = max_error[1]
+        max_error[1] = max_error[0]
+
+        # ============================================================================
+        # Writting results to the files using file output. Linear interpolation of solutions is used for a desired output time step.
+        # ============================================================================
+        t_output, t_output_step = file_output(t, t_old, t_output, t_output_step, t_output_list, t_output_step_list, file_type, output_file_list, output_files_variabe_names, output_new_variable_list, output_old_variable_list) # File output for desired list of variables. The values are calculated using linear interpolation at desired time steps
+
+if __name__ == "__main__":
+    arg_parser = ArgumentParser(description="FEDM streamer discharge test")
+    arg_parser.add_argument(
+        "-o", "--output", help="output directory", type=Path, default=None
+    )
+    arg_parser.add_argument(
+        "-i", "--input", help="input directory", type=Path, default=None
+    )
+    args = arg_parser.parse_args()
+    main(input_dir=args.input, output_dir=args.output)

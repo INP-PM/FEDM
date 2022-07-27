@@ -15,8 +15,9 @@ from fedm.physical_constants import *
 from fedm.file_io import *
 from fedm.functions import *
 
-def main(output_dir = Path.cwd()):
-    set_output_folder_path(output_dir)
+def main(output_dir = None):
+    if output_dir is not None:
+        set_output_folder_path(output_dir)
 
     # Optimization parameters.
     parameters["form_compiler"]["optimize"]     = True
@@ -172,7 +173,7 @@ def main(output_dir = Path.cwd()):
 if __name__ == "__main__":
     arg_parser = ArgumentParser(description="FEDM time of flight test")
     arg_parser.add_argument(
-        "-o", "--output", help="output directory", type=Path, default=Path.cwd()
+        "-o", "--output", help="output directory", type=Path, default=None
     )
     args = arg_parser.parse_args()
     main(output_dir=args.output)

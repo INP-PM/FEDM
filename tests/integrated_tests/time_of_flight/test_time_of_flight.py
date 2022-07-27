@@ -8,9 +8,11 @@ from .fedm_tof import main
 test_dir = Path(__file__).parent
 ref_dir = test_dir / "20220707_results"
 
+
 def get_relative_error(path: Path) -> float:
     with open(path, "r") as f_error:
         return float(f_error.readline().split('=')[-1].strip())
+
 
 @pytest.fixture
 def ref_data():

@@ -48,16 +48,19 @@ def set_output_folder_path(path: Path) -> None:
 
 def error_file() -> Path:
     global _error_file
-    if _error_file is None:
+    # If we haven't set the global _error_file yet, or the output folder path has
+    # changed, create a new error file.
+    if _error_file is None or _error_file.parent != output_folder_path():
         _error_file = output_folder_path() / "relative error.log"
         # truncate file
         with open(_error_file, 'w') as _:
             pass
+    
     return _error_file
 
 def model_log() -> Path:
     global _model_log
-    if _model_log is None:
+    if _model_log is None or _model_log.parent != output_folder_path():
         _model_log = output_folder_path() / "model.log"
         # truncate file
         with open(_model_log, 'w') as _:

@@ -351,18 +351,18 @@ def weak_form_balance_equation(
     expu_or_1 = df.exp(u) if log_representation else 1.0
     # Standard part
     u_part = (u * tr2p1 - trp1**2.0 * u_old + tr**2.0 * u_old1) / trp1
-    balance_eq = 2.0 * df.pi * (expu_or_1 * u_part * v / dt) * r * dx
+    time_derivative = 2.0 * df.pi * (expu_or_1 * u_part * v / dt) * r * dx
     # Source terms
     source = 2.0 * df.pi * v * f * r * dx
     # Diffusion terms
-    diff = 0.0
+    diffusion = 0.0
     if equation_type == "diffusion-reaction":
         expu_or_u = df.exp(u) if log_representation else u
-        diff = 2.0 * df.pi * df.dot(-df.grad(D * expu_or_u), df.grad(v)) * r * dx
+        diffusion = 2.0 * df.pi * df.dot(-df.grad(D * expu_or_u), df.grad(v)) * r * dx
     if equation_type == "drift-diffusion-reaction":
-        diff = 2.0 * df.pi * df.dot(Gamma, df.grad(v)) * r * dx
+        diffusion = 2.0 * df.pi * df.dot(Gamma, df.grad(v)) * r * dx
     # Return with integral bits
-    return balance_eq - diff - source
+    return time_derivative - diffusion - source
 
 
 def weak_form_balance_equation_log_representation(*args, **kwargs) -> df.Form:
@@ -516,14 +516,14 @@ def Boundary_flux(
             result *= (0.5 * vth + abs(sign * mu * df.dot(E, normal))) * df.exp(u)
             if particle_type == "electrons":
                 result -= 2.0 * gamma * Ion_flux / (1.0 + ref)
-        return 2.0 * df.pi * result * v * r * ds_temp
-
-    if bc_type == "Neumann" and equation_type == "drift-diffusion-reaction":
+        result = 2.0 * df.pi * result * v * r * ds_temp
+    elif bc_type == "Neumann" and equation_type == "drift-diffusion-reaction":
         # Note: Here we use the built-in dolfin.ds, not the ds_temp passed in.
-        return 2.0 * df.pi * df.dot(sign * mu * E, normal) * df.exp(u) * v * r * df.ds
-
-    # default, returned if bc_type is 'zero_flux', or if no other conditions are met.
-    return 0.0
+        result = 2.0 * df.pi * df.dot(sign * mu * E, normal) * df.exp(u) * v * r * df.ds
+    else:
+        # default, if bc_type is 'zero_flux', or if no other conditions are met.
+        result = 0.0
+    return result
 
 
 def Transport_coefficient_interpolation(
@@ -754,10 +754,13 @@ def semi_implicit_coefficients(
             "and 'coefficient_diffs' must be the same length."
         )
 
-    return [
-        coeff + diff * (mean_energy_new - mean_energy_old) if dep == "Umean" else coeff
-        for coeff, diff, dep in zip(coefficients, coefficient_diffs, dependences)
-    ]
+    si_coefficients = []
+    for coeff, diff, dep in zip(coefficients, coefficient_diffs, dependences):
+        if dep == "Umean":
+            si_coefficients.append(coeff)
+        else:
+            si_coefficients.append(coeff + diff * (mean_energy_new - mean_energy_old))
+    return si_coefficients
 
 
 def Source_term(

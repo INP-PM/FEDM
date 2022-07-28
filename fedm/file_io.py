@@ -1,6 +1,5 @@
 # Input and output module
 
-import warnings
 import re
 import itertools
 from pathlib import Path
@@ -19,59 +18,97 @@ df.set_log_level(level)
 
 # Functions for managing input/output files
 
-_input_dir = None
-_output_dir = None
-_error_file = None
-_model_log = None
+
+def truncate_file(path: Path) -> None:
+    """Deletes contents of file, leaving it as an empty file"""
+    with open(path, "w") as _:
+        pass
 
 
-def input_folder_path() -> Path:
-    global _input_dir
-    return _input_dir if _input_dir is not None else Path.cwd() / "file_input"
+class Files:
+    """
+    The Files class provides access to the files and directories used by FEDM. It should
+    normally be accessed via the global instance `fedm.files`.
+
+    It has the following attributes:
+    - file_input: Directory containing input files, default './file_input'. Can be
+      assigned to a new path. Throws an error if the new path doesn't exist.
+    - output_folder_path: Directory which will contain output files, default './output'.
+      Can be assigned to a new path. This will create a new directory if it doesn't
+      already exist.
+    - error_file: File storing relative errors. Cannot be assigned, and will always
+      return 'output_folder_path/relative error.log'. The first time the user accesses
+      it per run, the file will be created/truncated.
+    - model_log: File storing logs describing the run. Cannot be assigned, and will
+      always return 'output_folder_path/model.log'. The first time the user accesses
+      it per run, the file will be created/truncated.
+
+    Examples:
+
+    -- Assign a new value to file_input (folder must exist)
+    files.file_input = "my_file_input"
+    -- Get the current value of output_folder_path
+    output = files.output_folder_path
+    -- Get error file (first access will truncate the file)
+    error_file = files.error_file
+    """
+
+    def __init__(self):
+        self._input_dir = Path.cwd() / "file_input"
+        self._output_dir = Path.cwd() / "output"
+        self._error_file_accessed = False
+        self._model_log_accessed = False
+
+    @property
+    def file_input(self) -> Path:
+        return self._input_dir
+
+    @file_input.setter
+    def file_input(self, value: Path) -> None:
+        value = Path(value)
+        if not value.is_dir():
+            raise RuntimeError(f"fedm.files.file_input: '{value}' is not a directory")
+        self._input_dir = value
+
+    @property
+    def output_folder_path(self) -> Path:
+        return self._output_dir
+
+    @output_folder_path.setter
+    def output_folder_path(self, value: Path) -> None:
+        value = Path(value)
+        # If setting to a new output dir, ensure error/log files will be truncated
+        # on next access
+        if value.resolve() != self._output_dir.resolve():
+            self._error_file_accessed = False
+            self._model_log_accessed = False
+        # If the directory doesn't exist, create it
+        if not value.is_dir():
+            value.mkdir()
+        # Finally, set internal output dir
+        self._output_dir = value
+
+    @property
+    def error_file(self) -> Path:
+        result = self.output_folder_path / "relative error.log"
+        # If this is the first time we've accessed this error file, truncate
+        if not self._error_file_accessed:
+            truncate_file(result)
+            self._error_file_accessed = True
+        return result
+
+    @property
+    def model_log(self) -> Path:
+        result = self.output_folder_path / "model.log"
+        # If this is the first time we've accessed this error file, truncate
+        if not self._model_log_accessed:
+            truncate_file(result)
+            self._model_log_accessed = True
+        return result
 
 
-def set_input_folder_path(path: Path) -> None:
-    global _input_dir
-    path = Path(path)
-    if not path.is_dir():
-        raise RuntimeError(f"fedm.set_input_folder_path: '{path}' is not a directory.")
-    _input_dir = path
-
-
-def output_folder_path() -> Path:
-    global _output_dir
-    return _output_dir if _output_dir is not None else Path.cwd() / "output"
-
-
-def set_output_folder_path(path: Path) -> None:
-    global _output_dir
-    path = Path(path)
-    if not path.is_dir():
-        path.mkdir()
-    _output_dir = path
-
-
-def error_file() -> Path:
-    global _error_file
-    # If we haven't set the global _error_file yet, or the output folder path has
-    # changed, create a new error file.
-    if _error_file is None or _error_file.parent != output_folder_path():
-        _error_file = output_folder_path() / "relative error.log"
-        # truncate file
-        with open(_error_file, "w") as _:
-            pass
-
-    return _error_file
-
-
-def model_log() -> Path:
-    global _model_log
-    if _model_log is None or _model_log.parent != output_folder_path():
-        _model_log = output_folder_path() / "model.log"
-        # truncate file
-        with open(_model_log, "w") as _:
-            pass
-    return _model_log
+# global Files instance
+files = Files()
 
 
 # Utilities for use in this module
@@ -117,26 +154,30 @@ def output_files(
     output_file_names
         List of files to create
     """
-    if file_type not in ["pvd", "xdmf"]:
+    FileTypes = {
+        "pvd": df.File,
+        "xdmf": df.XDMFFile,
+    }
+
+    try:
+        FileType = FileTypes[file_type]
+    except KeyError as exc:
         err_msg = dedent(
-            f"""
+            f"""\
             fedm.output_files: file type '{file_type}' is not valid. Options are
             'pvd' or 'xdmf'.
             """
         )
-        raise ValueError(err_msg.rstrip().replace("\n", " "))
+        raise ValueError(err_msg.rstrip().replace("\n", " ")) from exc
 
-    FileType = df.File if file_type == "pvd" else df.XDMFFile
-    output_dir = output_folder_path() / type_of_output
+    output_dir = files.output_folder_path / type_of_output
 
-    file_paths = [
-        FileType(str(output_dir / file_name / f"{file_name}.{file_type}"))
-        for file_name in output_file_names
-    ]
-
-    if file_type == "xdmf":
-        for f in file_paths:
-            f.parameters["flush_output"] = True
+    file_paths = []
+    for file_name in output_file_names:
+        file_path = FileType(str(output_dir / file_name / f"{file_name}.{file_type}"))
+        if file_type == "xdmf":
+            file_path.parameters["flush_output"] = True
+        file_paths.append(file_path)
 
     return file_paths
 
@@ -190,7 +231,7 @@ def flatten(input_list: List[List[Any]]) -> List[Any]:
     """
     Reduces 2D list to 1D list.
     """
-    return itertools.chain.from_iterable(input_list)
+    return list(itertools.chain.from_iterable(input_list))
 
 
 def flatten_float(input_list: List[List[Any]]) -> List[float]:
@@ -209,7 +250,6 @@ def read_speclist(file_path):
     file_name = Path(file_path) / "speclist.cfg"
 
     # Get all lines from the file which have 'file:' in them
-    # Remove the "file:" from the line, and split by whitespace
     lines = [line for line in read_and_decomment(file_name) if "file:" in line]
 
     # remove "file:" from each line and split by whitespace
@@ -256,13 +296,13 @@ def rate_coefficient_file_names(path):
     Input parameter is the path to the folder.
     """
 
-    file_name = Path(path) / "reacscheme.cfg"
+    reaction_scheme_file = Path(path) / "reacscheme.cfg"
     rate_coefficient_dir_path = Path(path) / "rate_coefficients"
 
-    lines = read_and_decomment(file_name)
+    lines = read_and_decomment(reaction_scheme_file)
     regex = re.compile(r"kfile: ([A-Za-z0-9_]+.[A-Za-z0-9_]+)")
-    rcfns = flatten([regex.findall(line) for line in lines])
-    return [rate_coefficient_dir_path / rcfn for rcfn in rcfns]
+    file_names = flatten([regex.findall(line) for line in lines])
+    return [rate_coefficient_dir_path / file_name for file_name in file_names]
 
 
 def energy_loss(path):
@@ -271,12 +311,11 @@ def energy_loss(path):
     Input argument is the path to the folder.
     """
 
-    file_name = Path(path) / "reacscheme.cfg"
-    lines = read_and_decomment(file_name)
+    reaction_scheme_file = Path(path) / "reacscheme.cfg"
+    lines = read_and_decomment(reaction_scheme_file)
 
     regex = re.compile(r"Uin:\s?([+-]?\d+.\d+[eE]?[-+]?\d+|0|1.0)")
-    energy_loss_value = flatten([regex.findall(line) for line in lines])
-    energy_loss_value = [float(x) for x in energy_loss_value]
+    energy_loss_value = flatten_float([regex.findall(line) for line in lines])
 
     print_rank_0(energy_loss_value)
     return energy_loss_value
@@ -286,6 +325,9 @@ def read_dependence(file_name: str):
     """
     Reads dependence of rate coefficients from the corresponding file.
     """
+    file_name = Path(file_name)
+    if not file_name.is_file():
+        raise RuntimeError(f"fedm.read_dependence: file '{file_name}' not found")
     with open(file_name, "r", encoding="utf8") as f_input:
         for line in f_input:
             if "Dependence:" in line:
@@ -295,7 +337,7 @@ def read_dependence(file_name: str):
     )
 
 
-def dependence(file_names: List[str]):
+def read_dependences(file_names: List[str]):
     """
     Reads dependence of rate coefficients from a list of corresponding files.
     """
@@ -304,8 +346,7 @@ def dependence(file_names: List[str]):
 
 def read_rate_coefficients(rc_file_names: List[str], k_dependences: List[str]):
     """
-    Reading rate coefficients from files. Input
-    are file names and dependences.
+    Reading rate coefficients from files. Input are file names and dependences.
     """
     if len(rc_file_names) != len(k_dependences):
         raise ValueError(
@@ -313,27 +354,29 @@ def read_rate_coefficients(rc_file_names: List[str], k_dependences: List[str]):
             "the same length."
         )
 
-    float_deps = ["const"]
-    str_deps = ["fun:Te,Tgas", "fun:Tgas"]
-    two_col_deps = ["Umean", "E/N", "ElecDist"]
-    all_deps = float_deps + str_deps + two_col_deps
+    float_dependences = ["const"]
+    str_dependences = ["fun:Te,Tgas", "fun:Tgas"]
+    two_col_dependences = ["Umean", "E/N", "ElecDist"]
+    all_dependences = float_dependences + str_dependences + two_col_dependences
     for dependence in k_dependences:
-        if dependence not in all_deps:
+        if dependence not in all_dependences:
             raise ValueError(
                 f"fedm.read_rate_coefficients: The dependence '{dependence}' is not "
-                f"recognised. Options are {comma_separated(all_deps)}."
+                f"recognised. Options are {comma_separated(all_dependences)}."
             )
 
     kxs, kys = [], []
     for dependence, rc_file_name in zip(k_dependences, rc_file_names):
         print_rank_0(rc_file_name)
-        if dependence in two_col_deps:
+        if dependence in two_col_dependences:
             kx, ky = read_two_columns(rc_file_name)
-        else:
-            convert = float if dependence in float_deps else str
-            kx, ky = 0.0, read_single_value(rc_file_name, convert=convert)
+        elif dependence in float_dependences:
+            kx, ky = 0.0, read_single_float(rc_file_name)
+        else:  # dependence in string_dependences
+            kx, ky = 0.0, read_single_string(rc_file_name)
         kxs.append(kx)
         kys.append(ky)
+
     return kxs, kys
 
 
@@ -345,60 +388,52 @@ def read_transport_coefficients(
     particle names, type of transport coefficient (diffusion or mobility)
     and model.
     """
-    path = input_folder_path() / model / "transport_coefficients"
+    path = files.file_input / model / "transport_coefficients"
     if not path.is_dir():
         raise RuntimeError(
             f"fedm.read_transport_coefficients: Transport coeff dir '{path}' not found."
         )
 
-    float_deps = ["const"]
-    str_deps = ["fun:Te,Tgas", "fun:E"]
-    two_col_deps = ["Umean", "E/N", "Tgas", "Te"]
-    dependences = float_deps + str_deps + two_col_deps
+    float_dependences = ["const"]
+    str_dependences = ["fun:Te,Tgas", "fun:E"]
+    two_col_dependences = ["Umean", "E/N", "Tgas", "Te"]
+    all_dependences = float_dependences + str_dependences + two_col_dependences
     if transport_type == "Diffusion":
-        dependences += "ESR"
+        all_dependences.append("ESR")
 
-    kxs = []
-    kys = []
-    k_dependence = []
-    for particle in particle_names:
-        # Get file name
-        file_suffix = "_ND.dat" if transport_type == "Diffusion" else "_Nb.dat"
-        file_name = path / (particle + file_suffix)
-        if not file_name.is_file():
-            raise RuntimeError(
-                f"fedm.read_transport_coefficients: file '{file_name}' not found."
-            )
-        print_rank_0(file_name)
+    # Get dependences
+    file_suffix = "_ND.dat" if transport_type == "Diffusion" else "_Nb.dat"
+    file_names = [path / (particle + file_suffix) for particle in particle_names]
+    k_dependences = read_dependences(file_names)
 
-        # Get dependence from file
-        dependence = read_dependence(file_name)
+    # Correct any instances of 'const.'
+    k_dependences = [dep.replace("const.", "const") for dep in k_dependences]
 
-        if dependence == "const.":
-            warnings.warn(
-                "fedm.read_transport_coefficients: 'const' dependence should be "
-                "written 'const', not 'const.'"
-            )
-            dependence = "const"
-
-        if dependence not in dependences:
+    # Throw error if any dependences aren't recognised
+    for dependence in k_dependences:
+        if dependence not in all_dependences:
             err_msg = dedent(
                 f"""\
                 fedm.read_transport_coefficients: Dependence '{dependence}' not
                 recognised. For the transport type '{transport_type}', the possible
-                options are {comma_separated(dependences)}.
+                options are {comma_separated(all_dependences)}.
                 """
             )
-            raise RuntimeError(err_msg.rstrip().replace("\n", " "))
+            raise ValueError(err_msg.rstrip().replace("\n", " "))
 
-        # Set kx and ky
-        if dependence in two_col_deps:
+    # Get kx and ky from each file
+    kxs, kys = [], []
+    for file_name, dependence in zip(file_names, k_dependences):
+        print_rank_0(file_name)
+
+        if dependence in two_col_dependences:
             kx, ky = read_two_columns(file_name)
         elif dependence == "ESR":
             kx, ky = 0.0, 0.0
-        else:
-            convert = float if dependence in float_deps else str
-            kx, ky = 0.0, read_single_value(file_name, convert=convert)
+        elif dependence in float_dependences:
+            kx, ky = 0.0, read_single_float(file_name)
+        else:  # dependence in str_dependences
+            kx, ky = 0.0, read_single_string(file_name)
 
         if dependence == "fun:Te,Tgas":
             try:
@@ -411,9 +446,8 @@ def read_transport_coefficients(
 
         kxs.append(kx)
         kys.append(ky)
-        k_dependence.append(dependence)
 
-    return kxs, kys, k_dependence
+    return kxs, kys, k_dependences
 
 
 def read_particle_properties(file_names: List[str], model: str):
@@ -421,7 +455,7 @@ def read_particle_properties(file_names: List[str], model: str):
     Reads particle properties from input file.
     Input are file names and model.
     """
-    path = input_folder_path() / model / "species"
+    path = files.file_input / model / "species"
 
     masses, charges = [], []
     regex_mass = re.compile(r"Mass\s?=\s?([+-]?\d+.\d+[eE]?[-+]?\d+|0|1.0)")
@@ -562,7 +596,7 @@ def mesh_statistics(mesh: df.Mesh) -> None:
     Returns mesh size and, maximum and minimum element size.
     Input is mesh.
     """
-    mesh_dir = output_folder_path() / "mesh"
+    mesh_dir = files.output_folder_path / "mesh"
     vtkfile_mesh = df.File(str(mesh_dir / "mesh.pvd"))
     vtkfile_mesh.write(mesh)
     info_str = mesh_info(mesh)

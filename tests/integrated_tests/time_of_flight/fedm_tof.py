@@ -17,7 +17,7 @@ from fedm.functions import *
 
 def main(output_dir = None):
     if output_dir is not None:
-        set_output_folder_path(output_dir)
+        files.output_folder_path = Path(output_dir)
 
     # Optimization parameters.
     parameters["form_compiler"]["optimize"]     = True
@@ -47,7 +47,7 @@ def main(output_dir = None):
     M = me
     charge = -elementary_charge
     equation_type = ['drift-diffusion-reaction'] # Defining the type of the equation (reaction | diffusion-reaction | drift-diffusion-reaction)
-    log('properties', model_log(), gas, model, particle_species_type, M, charge) # Writting particle properties into a log file
+    log('properties', files.model_log, gas, model, particle_species_type, M, charge) # Writting particle properties into a log file
     vtkfile_u = output_files('pvd', 'number density', particle_species_type) # Setting-up output files
 
     # ============================================================================
@@ -92,9 +92,9 @@ def main(output_dir = None):
     mesh_statistics(mesh) # Prints number of elements, minimal and maximal cell diameter.
     h = MPI.max(MPI.comm_world, mesh.hmax()) # Maximuml cell size in mesh.
 
-    log('conditions', model_log(), dt.time_step, 'None', p0, box_height, N0, Tgas)
-    log('mesh', model_log(), mesh)
-    log('initial time', model_log(), t)
+    log('conditions', files.model_log, dt.time_step, 'None', p0, box_height, N0, Tgas)
+    log('mesh', files.model_log, mesh)
+    log('initial time', files.model_log, t)
 
     # ============================================================================
     # Defining type of elements and function space, test functions, trial functions and functions for storing variables, and weak form
@@ -145,7 +145,7 @@ def main(output_dir = None):
         u_old.assign(u_new) # Updating variable value in k-1 time step
         t += dt.time_step # Updating the new  time steps
 
-        log('time', model_log(), t) # Time logging
+        log('time', files.model_log, t) # Time logging
         print_time(t) # Printing out current time step
 
         f.t=t # Updating the source term for the current time step
@@ -157,7 +157,7 @@ def main(output_dir = None):
             n_exact = project(exp(u_analytical), V, solver_type='mumps')
             n_num = project(exp(u_new), V, solver_type='mumps')
             relative_error = errornorm(n_num, n_exact, 'l2')/norm(n_exact, 'l2') # Calculating relative difference between exact analytical and numerical solution
-            with open(error_file(), "a") as f_err:
+            with open(files.error_file, "a") as f_err:
                 f_err.write('h_max = ' + str(h) + '\t dt = ' + str(dt.time_step) + '\t relative_error = ' + str(relative_error) + '\n')
             if(MPI.rank(MPI.comm_world)==0):
                 print(relative_error)

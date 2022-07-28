@@ -17,9 +17,9 @@ from fedm.functions import *
 
 def main(input_dir = None, output_dir = None):
     if input_dir is not None:
-        set_input_folder_path(input_dir)
+        files.file_input = Path(input_dir)
     if output_dir is not None:
-        set_output_folder_path(output_dir)
+        files.output_folder_path = Path(output_dir)
 
     #Optimization parameters
     parameters["form_compiler"]["optimize"]     = True
@@ -44,7 +44,7 @@ def main(input_dir = None, output_dir = None):
     N0 = p0*3.21877e22 #[m^-3]
     U_w  = 18750.0  #[V]
     approximation = 'LFA' # Type of approximation used in the model
-    path = input_folder_path() / model # Path where input files for desired model are stored
+    path = files.file_input / model # Path where input files for desired model are stored
 
     # ============================================================================
     # Reading species list and particle properties, obtaining number of species for which the problem is solved and creating
@@ -108,8 +108,8 @@ def main(input_dir = None, output_dir = None):
     bc_type = ["zero_flux", "Neumann"] # Boundary conditions for given particle
     gamma = [0.0, 0.0] # Secondary electron emission coefficient
 
-    log('conditions', model_log(), dt.time_step, U_w, p0, box_height, N0, Tgas) # Writting simulation conditions to log file
-    log('properties', model_log(), gas, model, particle_species_file_names, M, charge) # Writting particle properties into a log file
+    log('conditions', files.model_log, dt.time_step, U_w, p0, box_height, N0, Tgas) # Writting simulation conditions to log file
+    log('properties', files.model_log, gas, model, particle_species_file_names, M, charge) # Writting particle properties into a log file
 
     # ===========================================================================================================================
     # Mesh setup and boundary measure redefinition. Structured mesh is generated using built-in mesh generator
@@ -117,14 +117,14 @@ def main(input_dir = None, output_dir = None):
     mesh = Mesh(str(Path(__file__).parent / 'mesh.xml')) # Importing mesh from xml file
 
     mesh_statistics(mesh) # Prints number of elements, minimum and maximal cell diameter
-    log('mesh', model_log(), mesh) # Writting mesh statistcs to the log file
+    log('mesh', files.model_log, mesh) # Writting mesh statistcs to the log file
 
     boundary_mesh_function = Marking_boundaries(mesh, boundaries) # Marking boundaries required for boundary conditions
     normal = FacetNormal(mesh) # Boundary normal
 
-    File(str(output_folder_path() / 'mesh' / 'boundary_mesh_function.pvd')) << boundary_mesh_function # Writting boundary mesh function to file
+    File(str(files.output_folder_path / 'mesh' / 'boundary_mesh_function.pvd')) << boundary_mesh_function # Writting boundary mesh function to file
 
-    log('initial time', model_log(), t) # Time logging
+    log('initial time', files.model_log, t) # Time logging
 
     # ============================================================================
     # Defining type of elements and function space, test functions, trial functions and functions for storing variables.
@@ -302,14 +302,14 @@ def main(input_dir = None, output_dir = None):
         assigner.assign(variable_list_old, u_old)
 
         ## Solving problem with adaptive time step
-        t = adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, variable_list_new, variable_list_old, assigner, error, error_file(), max_error, ttol, dt_min, time_dependent_arguments = [], approximation = approximation)
+        t = adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, variable_list_new, variable_list_old, assigner, error, files.error_file, max_error, ttol, dt_min, time_dependent_arguments = [], approximation = approximation)
 
         ## For the constant time step, comment previous and  uncomment following code block
         # t += dt.time_step
         # try_except = True
         #
         # assigner.assign(var_list_new, u_new)
-        # with open(error_file(), "a") as f_err:
+        # with open(files.error_file, "a") as f_err:
         #     i = 0
         #     while i < len(var_list_new) - 1:
         #         # temp1 = project(exp(var_list_new[i]), solver_type = 'gmres')
@@ -322,7 +322,7 @@ def main(input_dir = None, output_dir = None):
         #     f_err.flush()
         # max_error[0] = max(error)
 
-        log('time', model_log(), t) # Time logging
+        log('time', files.model_log, t) # Time logging
 
     # ============================================================================
     # Time step refinement

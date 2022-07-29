@@ -757,9 +757,9 @@ def semi_implicit_coefficients(
     si_coefficients = []
     for coeff, diff, dep in zip(coefficients, coefficient_diffs, dependences):
         if dep == "Umean":
-            si_coefficients.append(coeff)
-        else:
             si_coefficients.append(coeff + diff * (mean_energy_new - mean_energy_old))
+        else:
+            si_coefficients.append(coeff)
     return si_coefficients
 
 
@@ -830,7 +830,6 @@ def Source_term(
     f_temp = (rate[:, np.newaxis] * (g_matrix - l_matrix)).sum(axis=0)
 
     return list(f_temp)
-
 
 def Energy_Source_term(
     coupling: str,

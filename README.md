@@ -128,14 +128,17 @@ sudo apt update
 sudo apt install libgl1
 ```
 
-The tests are then run using pytest:
+The tests are then run using the `run_tests.sh` script (which may need `sudo`):
 
 ```bash
-python3 -m pytest -v tests
+./run_tests.sh
 ```
 
 The tests will run each of the integrated tests and store data in the container's `/tmp`
 directory. This is why the container must be run with `-v /tmp`.
+
+Note that calling `pytest tests/` will likely lead to false negatives. FEniCS must reset
+between each run, so each integrated test after the first one is likely to fail.
 
 ## How to use?
 

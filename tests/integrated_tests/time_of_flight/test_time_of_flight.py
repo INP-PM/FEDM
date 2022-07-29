@@ -3,7 +3,7 @@ import pytest
 import numpy as np
 
 from ..testing_utils import read_vtu, l_inf_norm, l1_norm, l2_norm
-from .fedm_tof import main
+from .fedm_tof import main as fedm_tof_main
 
 test_dir = Path(__file__).parent
 ref_dir = test_dir / "20220707_results"
@@ -11,7 +11,7 @@ ref_dir = test_dir / "20220707_results"
 
 def get_relative_error(path: Path) -> float:
     with open(path, "r") as f_error:
-        return float(f_error.readline().split('=')[-1].strip())
+        return float(f_error.readline().split("=")[-1].strip())
 
 
 @pytest.fixture
@@ -27,7 +27,7 @@ def ref_error():
 @pytest.fixture(scope="module")
 def data_dir(tmpdir_factory):
     tmp_dir = Path(tmpdir_factory.mktemp("fedm_tof"))
-    main(output_dir=tmp_dir)
+    fedm_tof_main(output_dir=tmp_dir)
     return tmp_dir
 
 

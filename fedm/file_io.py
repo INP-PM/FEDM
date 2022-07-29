@@ -305,7 +305,7 @@ def rate_coefficient_file_names(path):
     return [rate_coefficient_dir_path / file_name for file_name in file_names]
 
 
-def energy_loss(path):
+def read_energy_loss(path):
     """
     Reads energy loss values from "reacscheme.cfg" file.
     Input argument is the path to the folder.
@@ -327,7 +327,7 @@ def read_dependence(file_name: str):
     """
     file_name = Path(file_name)
     if not file_name.is_file():
-        raise RuntimeError(f"fedm.read_dependence: file '{file_name}' not found")
+        raise FileNotFoundError(f"fedm.read_dependence: file '{file_name}' not found")
     with open(file_name, "r", encoding="utf8") as f_input:
         for line in f_input:
             if "Dependence:" in line:
@@ -337,11 +337,20 @@ def read_dependence(file_name: str):
     )
 
 
-def read_dependences(file_names: List[str]):
+def read_dependences(file_names: List[str], zero_if_file_missing=False):
     """
     Reads dependence of rate coefficients from a list of corresponding files.
     """
-    return [read_dependence(file_name) for file_name in file_names]
+    dependences = []
+    for file_name in file_names:
+        try:
+            dependences.append(read_dependence(file_name))
+        except FileNotFoundError as exc:
+            if zero_if_file_missing:
+                dependences.append(0)
+            else:
+                raise exc
+    return dependences
 
 
 def read_rate_coefficients(rc_file_names: List[str], k_dependences: List[str]):
@@ -390,24 +399,26 @@ def read_transport_coefficients(
     """
     path = files.file_input / model / "transport_coefficients"
     if not path.is_dir():
-        raise RuntimeError(
+        raise FileNotFoundError(
             f"fedm.read_transport_coefficients: Transport coeff dir '{path}' not found."
         )
 
-    float_dependences = ["const"]
+    float_dependences = ["const", "const."]
     str_dependences = ["fun:Te,Tgas", "fun:E"]
     two_col_dependences = ["Umean", "E/N", "Tgas", "Te"]
     all_dependences = float_dependences + str_dependences + two_col_dependences
     if transport_type == "Diffusion":
         all_dependences.append("ESR")
+    if transport_type == "mobility":
+        all_dependences.append(0)
 
     # Get dependences
     file_suffix = "_ND.dat" if transport_type == "Diffusion" else "_Nb.dat"
     file_names = [path / (particle + file_suffix) for particle in particle_names]
-    k_dependences = read_dependences(file_names)
-
-    # Correct any instances of 'const.'
-    k_dependences = [dep.replace("const.", "const") for dep in k_dependences]
+    k_dependences = read_dependences(
+        file_names,
+        zero_if_file_missing=(transport_type == "mobility"),
+    )
 
     # Throw error if any dependences aren't recognised
     for dependence in k_dependences:
@@ -424,6 +435,14 @@ def read_transport_coefficients(
     # Get kx and ky from each file
     kxs, kys = [], []
     for file_name, dependence in zip(file_names, k_dependences):
+
+        # If transport is 'mobility' and dependence is 0, the file was missing.
+        # Set to zeros and skip.
+        if transport_type == "mobility" and dependence == 0:
+            kxs.append(0)
+            kys.append(0)
+            continue
+
         print_rank_0(file_name)
 
         if dependence in two_col_dependences:

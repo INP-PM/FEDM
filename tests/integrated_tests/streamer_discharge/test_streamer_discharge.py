@@ -4,9 +4,10 @@ import numpy as np
 import pandas as pd
 
 from ..testing_utils import read_vtu, l_inf_norm, l1_norm, l2_norm
-from .fedm_streamer import main
+from .fedm_streamer import main as fedm_streamer_main
 
 test_dir = Path(__file__).parent
+input_dir = test_dir / "file_input"
 ref_dir = test_dir / "20220707_results"
 
 
@@ -30,8 +31,7 @@ def ref_error():
 @pytest.fixture(scope="module")
 def data_dir(tmpdir_factory):
     tmp_dir = Path(tmpdir_factory.mktemp("fedm_streamer"))
-    input_dir = Path(__file__).parent / "file_input"
-    main(input_dir=input_dir, output_dir=tmp_dir)
+    fedm_streamer_main(input_dir=input_dir, output_dir=tmp_dir)
     return tmp_dir
 
 

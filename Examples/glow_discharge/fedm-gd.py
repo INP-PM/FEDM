@@ -64,7 +64,7 @@ n_ic = [N0, 1e12, 1e12, 1e12]  # Initial number density values
 # ============================================================================
 power_matrix, loss_matrix, gain_matrix = reaction_matrices(path, particle_species)  # Importing reaction matrices
 k_file_names = rate_coefficient_file_names(path)  # Importing file names containing given rate coefficient
-energy_loss = energy_loss(path)  # Reading energy loss for given reaction
+energy_loss = read_energy_loss(path)  # Reading energy loss for given reaction
 number_of_reactions = len(k_file_names)  # Number of reactions
 
 mu_x, mu_y, mobility_dependence = read_transport_coefficients(particle_species_file_names, 'mobility', model)  # Reading mobilities and dependence from files

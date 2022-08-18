@@ -11,10 +11,9 @@ from timeit import default_timer as timer
 import time
 import os
 import sys
-sys.path.insert(0, "../../fedm_modules")
-from physical_constants import *
-from file_io import *
-from functions import *
+from fedm.physical_constants import *
+from fedm.file_io import *
+from fedm.functions import *
 
 #Optimization parameters
 parameters["form_compiler"]["optimize"]     = True
@@ -39,7 +38,7 @@ p0 = 760.0 #[Torr]
 N0 = p0*3.21877e22 #[m^-3]
 U_w  = 18750.0  #[V]
 approximation = 'LFA' # Type of approximation used in the model
-path = 'file_input/' + model # Path where input files for desired model are stored
+path = files.file_input / model # Path where input files for desired model are stored
 
 # ============================================================================
 # Reading species list and particle properties, obtaining number of species for which the problem is solved and creating
@@ -50,7 +49,8 @@ M, sign = read_particle_properties(particle_prop, model)  # Reading particle pro
 equation_type = ['reaction', 'drift-diffusion-reaction'] # Defining the type of the equation (reaction | diffusion-reaction | drift-diffusion-reaction)
 particle_species_type = ['Ions', 'electrons'] # Defining particle type required for boundary condition: Neutral | Ion | electrons
 
-number_of_species, number_of_equations, particle_species, M, sign = approximation_type(approximation, number_of_species, particle_species, M, sign) # Setting up number of equations for given approximation
+# Setting up number of equations for given approximation
+number_of_species, number_of_equations, particle_species, M, sign = modify_approximation_vars(approximation, number_of_species, particle_species, M, sign)
 charge = [i * elementary_charge for i in sign]
 
 vtkfile_u = output_files('pvd', 'number density', particle_species_type) # Creates list of output files
@@ -102,8 +102,8 @@ boundaries = [['line', 0.0, 0.0, 0.0, box_width],
 bc_type = ["zero_flux", "Neumann"] # Boundary conditions for given particle
 gamma = [0.0, 0.0] # Secondary electron emission coefficient
 
-log('conditions', model_logging, dt.time_step, U_w, p0, box_height, N0, Tgas) # Writting simulation conditions to log file
-log('properties', model_logging, gas, model, particle_species_file_names, M, charge) # Writting particle properties into a log file
+log('conditions', files.model_log, dt.time_step, U_w, p0, box_height, N0, Tgas) # Writting simulation conditions to log file
+log('properties', files.model_log, gas, model, particle_species_file_names, M, charge) # Writting particle properties into a log file
 
 # ===========================================================================================================================
 # Mesh setup and boundary measure redefinition. Structured mesh is generated using built-in mesh generator
@@ -111,14 +111,14 @@ log('properties', model_logging, gas, model, particle_species_file_names, M, cha
 mesh = Mesh('mesh.xml') # Importing mesh from xml file
 
 mesh_statistics(mesh) # Prints number of elements, minimum and maximal cell diameter
-log('mesh', model_logging, mesh) # Writting mesh statistcs to the log file
+log('mesh', files.model_log, mesh) # Writting mesh statistcs to the log file
 
 boundary_mesh_function = Marking_boundaries(mesh, boundaries) # Marking boundaries required for boundary conditions
 normal = FacetNormal(mesh) # Boundary normal
 
-File('output/mesh/boundary_mesh_function.pvd') << boundary_mesh_function # Writting boundary mesh function to file
+File(str(files.output_folder_path / 'mesh' / 'boundary_mesh_function.pvd')) << boundary_mesh_function # Writting boundary mesh function to file
 
-log('initial time', model_logging, t) # Time logging
+log('initial time', files.model_log, t) # Time logging
 
 # ============================================================================
 # Defining type of elements and function space, test functions, trial functions and functions for storing variables.
@@ -217,8 +217,8 @@ E_m = sqrt(inner(-grad(u[2]), -grad(u[2]))) # Setting up electric field magnitud
 u_oldV[2].assign(Phi) # Updating initial value of potential
 u_newV[2].assign(Phi) # Updating potential value
 
-D_x, D_y, Diffusion_dependence = reading_transport_coefficients(particle_species, 'Diffusion', model) # Reading diffusion coefficients from input files
-mu_x, mu_y, mu_dependence = reading_transport_coefficients(particle_species, 'mobility', model) # Reading mobilities from input files
+D_x, D_y, Diffusion_dependence = read_transport_coefficients(particle_species, 'Diffusion', model) # Reading diffusion coefficients from input files
+mu_x, mu_y, mu_dependence = read_transport_coefficients(particle_species, 'mobility', model) # Reading mobilities from input files
 
 # ============================================================================
 # Definition of variational formulation for coupled approach
@@ -296,26 +296,27 @@ while abs(t-T_final)/T_final > 1e-6:
     assigner.assign(variable_list_old, u_old)
 
     ## Solving problem with adaptive time step
-    t = adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, variable_list_new, variable_list_old, assigner, error, file_error, max_error, ttol, dt_min, time_dependent_arguments = [], approximation = approximation)
+    t = adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, variable_list_new, variable_list_old, assigner, error, files.error_file, max_error, ttol, dt_min, time_dependent_arguments = [], approximation = approximation)
 
     ## For the constant time step, comment previous and  uncomment following code block
-    #t += dt.time_step
+    # t += dt.time_step
     # try_except = True
     #
     # assigner.assign(var_list_new, u_new)
-    # i = 0
-    # while i < len(var_list_new) - 1:
-    #     # temp1 = project(exp(var_list_new[i]), solver_type = 'gmres')
-    #     # temp0 = project(exp(var_list_old[i]), solver_type = 'gmres')
-    #     # error[i] = l2_norm(t, dt.time_step, temp1, temp0)
-    #     error[i] = l2_norm(t, dt.time_step, var_list_new[i], var_list_old[i])
-    #     file_error.write("{:<23}".format(str(error[i])) + '  ')
-    #     i += 1
-    # file_error.write("{:<23}".format(str(dt_old.time_step)) + '  ' + "{:<23}".format(str(dt.time_step)) + '\n')
-    # file_error.flush()
+    # with open(files.error_file, "a") as f_err:
+    #     i = 0
+    #     while i < len(var_list_new) - 1:
+    #         # temp1 = project(exp(var_list_new[i]), solver_type = 'gmres')
+    #         # temp0 = project(exp(var_list_old[i]), solver_type = 'gmres')
+    #         # error[i] = l2_norm(t, dt.time_step, temp1, temp0)
+    #         error[i] = l2_norm(t, dt.time_step, var_list_new[i], var_list_old[i])
+    #         f_err.write("{:<23}".format(str(error[i])) + '  ')
+    #         i += 1
+    #     f_err.write("{:<23}".format(str(dt_old.time_step)) + '  ' + "{:<23}".format(str(dt.time_step)) + '\n')
+    #     f_err.flush()
     # max_error[0] = max(error)
 
-    log('time', model_logging, t) # Time logging
+    log('time', files.model_log, t) # Time logging
 
 # ============================================================================
 # Time step refinement
@@ -332,5 +333,3 @@ while abs(t-T_final)/T_final > 1e-6:
     # ============================================================================
     t_output, t_output_step = file_output(t, t_old, t_output, t_output_step, t_output_list, t_output_step_list, file_type, output_file_list, output_files_variabe_names, output_new_variable_list, output_old_variable_list) # File output for desired list of variables. The values are calculated using linear interpolation at desired time steps
 
-file_error.close()
-model_logging.close()

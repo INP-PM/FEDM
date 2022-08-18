@@ -10,10 +10,9 @@ import numpy as np
 from timeit import default_timer as timer
 import time
 import sys
-sys.path.insert(0, "../../fedm_modules")
-from physical_constants import *
-from file_io import *
-from functions import *
+from fedm.physical_constants import *
+from fedm.file_io import *
+from fedm.functions import *
 
 # Optimization parameters.
 parameters["form_compiler"]["optimize"]     = True
@@ -43,7 +42,7 @@ particle_species_type = ['electrons', 'analytical solution'] # Defining particle
 M = me
 charge = -elementary_charge
 equation_type = ['drift-diffusion-reaction'] # Defining the type of the equation (reaction | diffusion-reaction | drift-diffusion-reaction)
-log('properties', model_logging, gas, model, particle_species_type, M, charge) # Writting particle properties into a log file
+log('properties', files.model_log, gas, model, particle_species_type, M, charge) # Writting particle properties into a log file
 vtkfile_u = output_files('pvd', 'number density', particle_species_type) # Setting-up output files
 
 # ============================================================================
@@ -84,9 +83,9 @@ mesh = RectangleMesh(Point(0, 0), Point(box_width, box_height), 80, 80) # Genera
 mesh_statistics(mesh) # Prints number of elements, minimal and maximal cell diameter.
 h = MPI.max(MPI.comm_world, mesh.hmax()) # Maximuml cell size in mesh.
 
-log('conditions', model_logging, dt.time_step, 'None', p0, box_height, N0, Tgas)
-log('mesh', model_logging, mesh)
-log('initial time', model_logging, t)
+log('conditions', files.model_log, dt.time_step, 'None', p0, box_height, N0, Tgas)
+log('mesh', files.model_log, mesh)
+log('initial time', files.model_log, t)
 
 # ============================================================================
 # Defining type of elements and function space, test functions, trial functions and functions for storing variables, and weak form
@@ -137,7 +136,7 @@ while abs(t-T_final)/T_final > 1e-6:
     u_old.assign(u_new) # Updating variable value in k-1 time step
     t += dt.time_step # Updating the new  time steps
 
-    log('time', model_logging, t) # Time logging
+    log('time', files.model_log, t) # Time logging
     print_time(t) # Printing out current time step
 
     f.t=t # Updating the source term for the current time step
@@ -149,7 +148,8 @@ while abs(t-T_final)/T_final > 1e-6:
         n_exact = project(exp(u_analytical), V, solver_type='mumps')
         n_num = project(exp(u_new), V, solver_type='mumps')
         relative_error = errornorm(n_num, n_exact, 'l2')/norm(n_exact, 'l2') # Calculating relative difference between exact analytical and numerical solution
-        file_error.write('h_max = ' + str(h) + '\t dt = ' + str(dt.time_step) + '\t relative_error = ' + str(relative_error) + '\n')
+        with open(files.error_file, "a") as f_err:
+            f_err.write('h_max = ' + str(h) + '\t dt = ' + str(dt.time_step) + '\t relative_error = ' + str(relative_error) + '\n')
         if(MPI.rank(MPI.comm_world)==0):
             print(relative_error)
         vtkfile_u[0] << (n_num, t)
@@ -160,6 +160,3 @@ while abs(t-T_final)/T_final > 1e-6:
         dt_old.time_step = dt.time_step # For initialization BDF1 is used and after initial step BDF2 is activated
         if(MPI.rank(MPI.comm_world)==0):
             print(str(dt_old.time_step) + '\t' + str(dt.time_step) +'\n')
-
-file_error.close()
-model_logging.close()

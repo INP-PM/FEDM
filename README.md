@@ -35,10 +35,26 @@ sudo add-apt-repository \
 sudo apt update
 sudo apt-get install docker-ce docker-ce-cli containerd.io
 ```
+
 After installing the Docker, the latest stable FEniCS image (currently FEniCS 2019.1.0) can be run using the following command in the terminal:
 
 ```bash
-sudo docker run -ti -v $(pwd):/home/fenics/shared quay.io/fenicsproject/stable
+sudo docker run -ti \
+    -v $(pwd):/home/fenics/shared \
+    -v /tmp \
+    quay.io/fenicsproject/stable
+```
+
+The following steps will also let you run Docker as a non-root user:
+
+```bash
+sudo groupadd docker # create docker group if none exists
+sudo usermod -aG docker $USER # Add self to docker group
+# ... log out and log back in, or call `newgrp docker` ...
+docker run -ti \
+    -v $(pwd):/home/fenics/shared \
+    -v /tmp \
+    quay.io/fenicsproject/stable
 ```
 
 Here it is assumed that the FEDM code is located in the subdirectory `fedm` within the current directory. Now, switch to the shared volume mounted in the container to use FEDM:
@@ -64,27 +80,65 @@ fedm
 |   |-- time_of_flight
 |   |   |-- fedm-tof.py
 |   |   |-- README.md
-|-- fedm_modules
+|-- fedm
 |   |-- file_io.py
 |   |-- functions.py
 |   |-- physical_constants.py
 |-- LICENCE
 |-- README.md
+|-- setup.py
+|-- setup.cfg
+|-- pyproject.toml
 ```
 
-The directory `Examples` contains the code for the three case studies described in [ADD REFERENCE]. One can execute each example by running the following command in the corresponding directory
+FEDM can be installed within the Docker container using:
+
+```bash
+python3 -m pip install --user .
+```
+
+The directory `Examples` contains the code for the three case studies described in [ADD REFERENCE]. One can execute each example by running the following command in the corresponding directory (you may need to use `sudo`):
 
 ```bash
 python3 fedm-name_of_example.py
 ```
 
-or in parallel using MPI
+or in parallel using MPI:
 
 ```bash
 mpirun –np 8 python3 fedm-name_of_example.py
 ```
 
-It should be noted that besides FEniCS, no additional dependencies are required. Note that the new experimental version FEniCSx 0.4 has been recently published, while the FEniCS 2019.1.0 is considered to be deprecated. Currently, there are no plans to update FEDM to be compatible with the newest version (at least until the stable FEniCSx version is published).
+Note that the new experimental version FEniCSx 0.4 has been recently published, while the FEniCS 2019.1.0 is considered to be deprecated. Currently, there are no plans to update FEDM to be compatible with the newest version (at least until the stable FEniCSx version is published).
+
+## Testing
+
+Testing must be performed within the Docker container. The testing dependencies should 
+be installed using:
+
+```bash
+python3 -m pip install --user .[tests]
+```
+
+The Python `vtk` library is needed to read output files, which in turn requires OpenGL,
+so you may need to install this:
+
+```bash
+sudo apt update
+sudo apt install libgl1
+```
+
+The tests are then run using the `run_tests.sh` script (which may need `sudo`):
+
+```bash
+./run_tests.sh
+```
+
+The tests will run each of the integrated tests and store data in the container's `/tmp`
+directory. This is why the container must be run with `-v /tmp`.
+
+Note that calling `pytest tests/` will likely lead to false negatives. FEniCS must reset
+between each run, so each integrated test after the first one is likely to fail.
 
 ## How to use?
 

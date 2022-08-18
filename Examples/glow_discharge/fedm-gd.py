@@ -16,10 +16,9 @@ from timeit import default_timer as timer
 import time
 import os
 import sys
-sys.path.insert(0, "../../fedm_modules")
-from physical_constants import *
-from file_io import *
-from functions import *
+from fedm.physical_constants import *
+from fedm.file_io import *
+from fedm.functions import *
 
 # Optimization parameters.
 parameters["form_compiler"]["optimize"] = True
@@ -45,7 +44,7 @@ p0 = 1.0   #[Torr]
 N0 = p0*3.21877e22  #[m^-3]
 U_w  = -250.0   #[V]
 approximation = 'LMEA'  # Type of approximation used in the model
-path = 'file_input/' + model  # Path where input files for desired model are stored
+path = files.file_input / model  # Path where input files for desired model are stored
 file_type = 'pvd'
 
 # ============================================================================
@@ -65,12 +64,12 @@ n_ic = [N0, 1e12, 1e12, 1e12]  # Initial number density values
 # ============================================================================
 power_matrix, loss_matrix, gain_matrix = reaction_matrices(path, particle_species)  # Importing reaction matrices
 k_file_names = rate_coefficient_file_names(path)  # Importing file names containing given rate coefficient
-energy_loss = energy_loss(path)  # Reading energy loss for given reaction
+energy_loss = read_energy_loss(path)  # Reading energy loss for given reaction
 number_of_reactions = len(k_file_names)  # Number of reactions
 
-mu_x, mu_y, mobility_dependence = reading_transport_coefficients(particle_species_file_names, 'mobility', model)  # Reading mobilities and dependence from files
-D_x, D_y, Diffusion_dependence = reading_transport_coefficients(particle_species_file_names, 'Diffusion', model)  # Reading diffusion coefficients and dependence from files
-k_dependence = dependence(k_file_names)  # Reading dependence from files, required for rate coefficient interpolation
+mu_x, mu_y, mobility_dependence = read_transport_coefficients(particle_species_file_names, 'mobility', model)  # Reading mobilities and dependence from files
+D_x, D_y, Diffusion_dependence = read_transport_coefficients(particle_species_file_names, 'Diffusion', model)  # Reading diffusion coefficients and dependence from files
+k_dependence = read_dependences(k_file_names)  # Reading dependence from files, required for rate coefficient interpolation
 k_x, k_y = read_rate_coefficients(k_file_names, k_dependence)  # Reading rate coefficients
 
 De_diff = np.gradient(D_y[number_of_species - 1], D_x[number_of_species - 1])/N0
@@ -86,7 +85,8 @@ while i < len(k_y):
         k_diff.append(0.0)
     i += 1
 
-number_of_equations = approximation_type(approximation, number_of_species)
+# Setting up number of equations for given approximation
+number_of_species, number_of_equations, particle_species, M, sign = modify_approximation_vars(approximation, number_of_species, particle_species, M, sign)
 
 xdmf_file_u = output_files('xdmf', 'number density', particle_species_file_names)  # Creating list of output files
 vtkfile_Phi = output_files('pvd', 'potential', ['Phi'])  # Creating list of output files
@@ -145,8 +145,8 @@ gamma_metallic = 0.06  # Secondary electron emission coefficient for metalic sur
 gamma = [gamma_metallic, gamma_metallic, 0, 0]  # List of secondary emission coefficients for the given boundaries
 we_metalic = 5.0  # Mean energy of secondary emitted electrons [eV]
 
-log('conditions', model_logging, dt.time_step, U_w, p0, gap_length, N0, Tgas)  # Writting simulation conditions to log file
-log('properties', model_logging, gas, model, particle_species_file_names, M, charge)  # Writting particle properties into a log file
+log('conditions', files.model_log, dt.time_step, U_w, p0, gap_length, N0, Tgas)  # Writting simulation conditions to log file
+log('properties', files.model_log, gas, model, particle_species_file_names, M, charge)  # Writting particle properties into a log file
 
 # ===========================================================================================================================
 # Mesh setup and boundary measure redefinition. Structured mesh is generated using built-in mesh generator
@@ -154,15 +154,15 @@ log('properties', model_logging, gas, model, particle_species_file_names, M, cha
 mesh_plasma = RectangleMesh(Point(0, 0), Point(wall, gap_length), 100, 100, "crossed")  # Generating structured triangular mesh
 
 mesh_statistics(mesh_plasma)  # Prints number of elements, minimum and maximum cell diameter
-log('mesh', model_logging, mesh_plasma)  # Writting mesh statistcs to the log file
+log('mesh', files.model_log, mesh_plasma)  # Writting mesh statistcs to the log file
 
 boundary_mesh_function = Marking_boundaries(mesh_plasma, boundaries)  # Marking boundaries required for boundary conditions
 ds_plasma = Measure('ds', domain = mesh_plasma, subdomain_data = boundary_mesh_function)  # Boundary measure redefinition
 normal_plasma = FacetNormal(mesh_plasma)  # Boundary normal
 
-File('output/mesh/boundary_mesh_function.pvd') << boundary_mesh_function  # Writting boundary mesh function to file
-log('matrices', model_logging, gain_matrix, loss_matrix, power_matrix)  # Writting the reaction matrices that determine rates and source term
-log('initial time', model_logging, t)  # Time logging
+File(str(files.output_folder_path / 'mesh' / 'boundary_mesh_function.pvd')) << boundary_mesh_function  # Writting boundary mesh function to file
+log('matrices', files.model_log, gain_matrix, loss_matrix, power_matrix)  # Writting the reaction matrices that determine rates and source term
+log('initial time', files.model_log, t)  # Time logging
 
 # ============================================================================
 # Defining type of elements and function space, test functions, trial functions and functions for storing postprocessing variables.
@@ -308,8 +308,8 @@ redE.assign(project(1e21*sqrt(dot(-grad(Phi), -grad(Phi)))/N0, solver_type='mump
 redE_old.assign(redE)  # Updating reduced electric field in previous time step
 
 # Calculating transport and rate coefficients using linear interpolation
-Transport_coefficient_interpolation('initial', mobility_dependence, N0, Tgas, mu, mu_x, mu_y, mean_energy, redE, mu, Te = 0)  # Mobilities interpolation
-Transport_coefficient_interpolation('initial', Diffusion_dependence, N0, Tgas, D, D_x, D_y, mean_energy, redE, mu, Te = 0)  # Diffusion coefficients interpolation
+Transport_coefficient_interpolation('initial', mobility_dependence, N0, Tgas, mu, mu_x, mu_y, mean_energy, redE, mu)  # Mobilities interpolation
+Transport_coefficient_interpolation('initial', Diffusion_dependence, N0, Tgas, D, D_x, D_y, mean_energy, redE, mu)  # Diffusion coefficients interpolation
 Rate_coefficient_interpolation('initial', k_dependence, rate_coefficient, k_x, k_y, mean_energy, redE, Te = 0, Tgas = 0)  # Rates coefficients interpolation
 
 rate_coefficient_si = semi_implicit_coefficients(k_dependence, mean_energy_e, mean_energy_old, rate_coefficient, rate_coefficient_diff)
@@ -437,9 +437,9 @@ while t < T_final:
     # ============================================================================
     # Solving the coupled equation ussing adaptive solver. The calculated values are assigned to the variables used for postprocessing.
     # ============================================================================
-    t = adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, variable_list_new, variable_list_old, assigner, error, file_error, max_error, ttol, dt_min, time_dependent_arguments = [Phi_powered], approximation = approximation)
+    t = adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, variable_list_new, variable_list_old, assigner, error, files.error_file, max_error, ttol, dt_min, time_dependent_arguments = [Phi_powered], approximation = approximation)
 
-    log('time', model_logging, t)  # Time logging
+    log('time', files.model_log, t)  # Time logging
 
     mean_energy.vector()[:] = np.exp(we_newV.vector()[:] - u_newV[number_of_species-1].vector()[:])  # Mean energy calculations
 
@@ -462,5 +462,3 @@ while t < T_final:
     max_error[2] = max_error[1]
     max_error[1] = max_error[0]
 
-file_error.close()
-model_logging.close()

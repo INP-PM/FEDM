@@ -4,13 +4,13 @@ In the last case study, the glow discharge in argon at low pressure is modelled.
 
 - the particle species list are read from the input file stored in the `file_input` folder using the `read_speclist()` function, which returns the number of species, their names and corresponding file names
 - the particle properties are read from the input files stored in the `file_input` folder using the `read_particle_properties()` function, which returns the mass and the charge of the particles
-- the number of equations that nedd to be solved are determined based on the used type of approximation in the model (LFA or LMEA) using the `approximation_type()` function
+- the number of equations that nedd to be solved are determined based on the used type of approximation in the model (LFA or LMEA) using the `modify_approximation_vars()` function
 - the output files are created using the `output_files()` function
 - the logging of the particle properties, the simulation conditions, the mesh statistics and the time are done using the `log()` function
 - the reaction matrices used to construct the rates and the source terms are read from the reaction scheme file using the `reaction_matrices()` function
 - the names of files containing the rate coefficients are read using the `rate_coefficient_file_names()` function
-- the energy loss for the given reaction are read from the file using the `energy_loss()` function
-- the transport coefficients are read from the input files using the `reading_transport_coefficients()` function
+- the energy loss for the given reaction are read from the file using the `read_energy_loss()` function
+- the transport coefficients are read from the input files using the `read_transport_coefficients()` function
 - the rate coefficients are read from the input files using the `read_rate_coefficients()` function
 - the values of the transport coefficient for the given energy, the reduced electric field or the temperature are obtained using the `Transport_coefficient_interpolation()` function
 - the values of the rate coefficient for the given energy, the reduced electric field or the temperature are obtained using the `Rate_coefficient_interpolation()` function

@@ -5,7 +5,7 @@ In the second case study, the positive streamer in air at atmospheric pressure i
 - the particle species list are read from the input file stored in `file_input` folder using `read_speclist()` function, which returns the number of species, their names and corresponding file names
 - the particle properties are read from the input files stored in `file_input` folder using `read_particle_properties()`, which returns the mass and the charge of the particles
 - the transport coefficients are read from the input files using `reading_transport_coefficients()`, noting that since the coefficients are described as the functions in this example, they should be expressed as the python code in the input files
-- the number of equations are determined based on the type of approximation used in the model (LFA or LMEA) by `approximation_type()` function
+- the number of equations are determined based on the type of approximation used in the model (LFA or LMEA) by `modify_approximation_vars()` function
 - the output files are created using `output_files()` function
 - the boundaries are marked with boundary marking function `Marking_boundaries()`, returning the mesh function that is used for redefinition of the surface integral measure `ds`
 - the logging of the particle properties, the simulation conditions, the mesh statistics and the time is done using `log()` function

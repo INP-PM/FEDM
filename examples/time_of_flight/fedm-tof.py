@@ -84,7 +84,6 @@ mesh_statistics(mesh) # Prints number of elements, minimal and maximal cell diam
 h = MPI.max(MPI.comm_world, mesh.hmax()) # Maximuml cell size in mesh.
 
 log('conditions', files.model_log, dt.time_step, 'None', p0, box_height, N0, Tgas)
-log('mesh', files.model_log, mesh)
 log('initial time', files.model_log, t)
 
 # ============================================================================

@@ -154,7 +154,6 @@ log('properties', files.model_log, gas, model, particle_species_file_names, M, c
 mesh_plasma = RectangleMesh(Point(0, 0), Point(wall, gap_length), 100, 100, "crossed")  # Generating structured triangular mesh
 
 mesh_statistics(mesh_plasma)  # Prints number of elements, minimum and maximum cell diameter
-log('mesh', files.model_log, mesh_plasma)  # Writting mesh statistcs to the log file
 
 boundary_mesh_function = Marking_boundaries(mesh_plasma, boundaries)  # Marking boundaries required for boundary conditions
 ds_plasma = Measure('ds', domain = mesh_plasma, subdomain_data = boundary_mesh_function)  # Boundary measure redefinition
@@ -461,4 +460,3 @@ while t < T_final:
      # Updating maximum error in previous time steps
     max_error[2] = max_error[1]
     max_error[1] = max_error[0]
-

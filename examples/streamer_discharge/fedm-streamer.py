@@ -23,7 +23,7 @@ parameters['krylov_solver']['nonzero_initial_guess'] = True
 parameters["form_compiler"]["quadrature_degree"] = 2
 
 # Defining tye of used solver and its parameters.
-linear_solver = "gmres" # Type of linear solver lu | mumps | gmres | bicgstab
+linear_solver = "mumps" # Type of linear solver lu | mumps | gmres | bicgstab
 maximum_iterations = 20
 relative_tolerance = 1e-4
 
@@ -73,7 +73,7 @@ dt_old_init = 1e30 # Initial time step size [s] setted up as extremely large val
 dt = Expression("time_step", time_step = dt_init, degree = 0) # Time step size [s]
 dt_old = Expression("time_step", time_step = dt_old_init, degree = 0) # Time step size expression [s], Initial value is set up to be large in order to reduce initial step of adaptive BDF formula to one.
 
-ttol = 1e-3 # Tolerance for adaptive time stepping
+ttol = 1e-4 # Tolerance for adaptive time stepping
 
 ### Setting-up output times and time steps. t_output_list and t_output_step_list need to have same length
 t_output_list = [1e-11, 1e-10, 1e-9] # List of time step intervals (consisting of two consecutive components) at which the results are printed to file
@@ -99,7 +99,12 @@ boundaries = [['line', 0.0, 0.0, 0.0, box_width],
               ['line', box_height, box_height, 0.0, box_width],
               ['line', 0.0, box_height, 0.0, 0.0],
               ['line', 0.0, box_height, box_width, box_width]]
-bc_type = ["zero_flux", "Neumann"] # Boundary conditions for given particle
+number_of_boundaries = len(boundaries)
+bc_type_grounded = ['zero flux', 'Neumann']
+bc_type_powered =  ['zero flux', 'Neumann']
+bc_type_axis = ['zero flux', 'zero flux']
+bc_type_wall = ['zero flux', 'zero flux']
+bc_type = [bc_type_grounded, bc_type_powered, bc_type_axis, bc_type_wall] # Boundary conditions for given particle
 gamma = [0.0, 0.0] # Secondary electron emission coefficient
 
 log('conditions', files.model_log, dt.time_step, U_w, p0, box_height, N0, Tgas) # Writting simulation conditions to log file
@@ -111,12 +116,14 @@ log('properties', files.model_log, gas, model, particle_species_file_names, M, c
 mesh = Mesh('mesh.xml') # Importing mesh from xml file
 
 mesh_statistics(mesh) # Prints number of elements, minimum and maximal cell diameter
-log('mesh', files.model_log, mesh) # Writting mesh statistcs to the log file
-
 boundary_mesh_function = Marking_boundaries(mesh, boundaries) # Marking boundaries required for boundary conditions
 normal = FacetNormal(mesh) # Boundary normal
 
 File(str(files.output_folder_path / 'mesh' / 'boundary_mesh_function.pvd')) << boundary_mesh_function # Writting boundary mesh function to file
+
+dx = Measure('dx', domain = mesh)
+ds = Measure('ds', domain = mesh, subdomain_data = boundary_mesh_function)              #boundary measure redefinition
+
 
 log('initial time', files.model_log, t) # Time logging
 
@@ -256,8 +263,11 @@ F += weak_form_Poisson_equation(dx, u[number_of_equations - 1], v[number_of_equa
 # The index for each boundary can be seen by plotting boundary mesh function in paraview
 # ===========================================================================================================================
 i = 0
-while i < number_of_species:
-    F += Boundary_flux(bc_type[i], equation_type[i], particle_species_type[i], sign[i], mu[i], E, normal, u[i], gamma[i], v[i], ds, r)
+while i < number_of_boundaries:
+    j = 0
+    while j < number_of_species:
+        F += Boundary_flux(bc_type[i][j], equation_type[j], particle_species_type[j], sign[j], mu[j], E, normal, u[j], gamma[j], v[j], ds(i+1), r)
+        j += 1
     i += 1
 
 # ============================================================================
@@ -284,7 +294,8 @@ problem = Problem(J, F, bc)
 nonlinear_solver = PETScSNESSolver()
 nonlinear_solver.parameters['relative_tolerance'] = relative_tolerance
 nonlinear_solver.parameters["linear_solver"]= linear_solver
-nonlinear_solver.parameters["preconditioner"] = "hypre_amg" # setting the preconditioner, uncomment if iterative solver is used
+if linear_solver == 'gmrs':
+    nonlinear_solver.parameters["preconditioner"] = "hypre_amg" # setting the preconditioner, uncomment if iterative solver is used
 
 # ============================================================================
 # Time loop
@@ -332,4 +343,3 @@ while abs(t-T_final)/T_final > 1e-6:
     # Writting results to the files using file output. Linear interpolation of solutions is used for a desired output time step.
     # ============================================================================
     t_output, t_output_step = file_output(t, t_old, t_output, t_output_step, t_output_list, t_output_step_list, file_type, output_file_list, output_files_variabe_names, output_new_variable_list, output_old_variable_list) # File output for desired list of variables. The values are calculated using linear interpolation at desired time steps
-

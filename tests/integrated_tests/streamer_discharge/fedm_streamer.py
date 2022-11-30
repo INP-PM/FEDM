@@ -105,7 +105,12 @@ def main(input_dir = None, output_dir = None):
                   ['line', box_height, box_height, 0.0, box_width],
                   ['line', 0.0, box_height, 0.0, 0.0],
                   ['line', 0.0, box_height, box_width, box_width]]
-    bc_type = ["zero_flux", "Neumann"] # Boundary conditions for given particle
+    number_of_boundaries = len(boundaries)
+    bc_type_grounded = ['zero flux', 'Neumann']
+    bc_type_powered =  ['zero flux', 'Neumann']
+    bc_type_axis = ['zero flux', 'zero flux']
+    bc_type_wall = ['zero flux', 'zero flux']
+    bc_type = [bc_type_grounded, bc_type_powered, bc_type_axis, bc_type_wall] # Boundary conditions for given particle
     gamma = [0.0, 0.0] # Secondary electron emission coefficient
 
     log('conditions', files.model_log, dt.time_step, U_w, p0, box_height, N0, Tgas) # Writting simulation conditions to log file
@@ -123,6 +128,10 @@ def main(input_dir = None, output_dir = None):
     normal = FacetNormal(mesh) # Boundary normal
 
     File(str(files.output_folder_path / 'mesh' / 'boundary_mesh_function.pvd')) << boundary_mesh_function # Writting boundary mesh function to file
+
+    dx = Measure('dx', domain = mesh)
+    ds = Measure('ds', domain = mesh, subdomain_data = boundary_mesh_function)              #boundary measure redefinition
+
 
     log('initial time', files.model_log, t) # Time logging
 
@@ -262,8 +271,11 @@ def main(input_dir = None, output_dir = None):
     # The index for each boundary can be seen by plotting boundary mesh function in paraview
     # ===========================================================================================================================
     i = 0
-    while i < number_of_species:
-        F += Boundary_flux(bc_type[i], equation_type[i], particle_species_type[i], sign[i], mu[i], E, normal, u[i], gamma[i], v[i], ds, r)
+    while i < number_of_boundaries:
+        j = 0
+        while j < number_of_species:
+            F += Boundary_flux(bc_type[i][j], equation_type[j], particle_species_type[j], sign[j], mu[j], E, normal, u[j], gamma[j], v[j], ds(i+1), r)
+            j += 1
         i += 1
 
     # ============================================================================
@@ -290,7 +302,8 @@ def main(input_dir = None, output_dir = None):
     nonlinear_solver = PETScSNESSolver()
     nonlinear_solver.parameters['relative_tolerance'] = relative_tolerance
     nonlinear_solver.parameters["linear_solver"]= linear_solver
-    nonlinear_solver.parameters["preconditioner"] = "hypre_amg" # setting the preconditioner, uncomment if iterative solver is used
+    if linear_solver == 'gmrs':
+        nonlinear_solver.parameters["preconditioner"] = "hypre_amg" # setting the preconditioner, uncomment if iterative solver is used
 
     # ============================================================================
     # Time loop

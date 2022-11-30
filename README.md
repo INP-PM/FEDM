@@ -68,7 +68,7 @@ The code directory has the following structure:
 
 ```
 fedm
-├── Examples
+├── examples
 │   ├── glow_discharge
 │   ├── streamer_discharge
 │   └── time_of_flight

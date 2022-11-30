@@ -2,7 +2,7 @@
 
 ## Description
 
-Finite Element electric Discharge Modelling (FEDM) code utilizes the FEniCS (https://fenicsproject.org) computing platform for fluid modelling of the electrical discharges operating under various conditions. The fluid model usually comprises the system of balance equations for particle species, coupled with Poisson's equation and, depending on the used approximation, the electron energy balance equation. In practice, it is often required to take into account a large number of particle species and processes, so the manual definition of the balance equations and the source terms becomes a time-consuming, tedious and error-prone process. This package automates this procedure by providing a set of functions that allows easy definition of the problem. In addition, the package offers a method for the time discretisation of the time-dependent equations using a variable time-step backward differentiation formula with appropriate time-step size control, which are not natively available in the FEniCS. This time-discretisation method allows one to tackle the problem of stiff equations that commonly occur in plasma modelling.
+Finite Element Discharge Modelling (FEDM) code utilises the FEniCS (https://fenicsproject.org) computing platform for fluid modelling of the electrical discharges operating under various conditions. The code extends FEniCS with features that allow the automated implementation and numerical solution of fully-coupled fluid-Poisson models including an arbitrary number of particle balance equations. The fluid-Poisson models comprise the system of balance equations for particle species, coupled with Poisson's equation and, depending on the used approximation, the electron energy balance equation. In practice, it is often required to take into account a large number of particle species and processes, so the manual implementation of the balance equations and the source terms becomes a time-consuming, tedious and error-prone process. This package automates the procedure by providing a set of functions that allows an easy definition of the problem. In addition, the package offers a method for the time discretisation of the time-dependent equations using a variable time-step backward differentiation formula with appropriate time-step size control. This time-discretisation method allows one to tackle the problem of stiff equations that commonly occur in plasma modelling due to the very different time scales of the various reaction processes.
 
 ## Build status
 
@@ -10,13 +10,14 @@ Initial build - version 0.1
 
 ## Features
 
-- automated function and variational form definition for an arbitrary number of particle species based on a predefined particle species list
+- automated implementation of the variational forms of the Poisson's equation and an arbitrary number of balance equations for particle species based on a predefined species list
+- automated source term generation based on reading the reaction scheme from the input file
 - adaptive time step refinement using variable time-step Backward differentiation formula (BDF) of the second-order
-- automatized source term definition based on reading the reaction scheme from the input file
+
 
 ## Installation
 
-In order to run this code FEniCS version 2019.1.0. is required. The easiest way to obtain the desired version of FEniCS is by using a Docker image. First, it is required to install the Docker. On Ubuntu/Debian Linux systems, this can be done using the official repository in the following way:
+FEniCS version 2019.1.0. is required to run the FEDM code. The easiest way to obtain the desired version of FEniCS is by using a Docker image. First, it is required to install the Docker. On Ubuntu/Debian Linux systems, this can be done using the official repository in the following way:
 
 ```bash
 sudo apt update
@@ -57,7 +58,7 @@ docker run -ti \
     quay.io/fenicsproject/stable
 ```
 
-Here it is assumed that the FEDM code is located in the subdirectory `fedm` within the current directory. Now, switch to the shared volume mounted in the container to use FEDM:
+Here, it is assumed that the FEDM code is located in the subdirectory `fedm` within the current directory. Now, switch to the shared volume mounted in the container to use FEDM:
 
 ```bash
 cd shared/fedm
@@ -67,28 +68,26 @@ The code directory has the following structure:
 
 ```
 fedm
-|-- Examples
-|   |-- glow_discharge
-|   |   |-- fedm-gd.py
-|   |	|-- file_input
-|   |   |-- README.md
-|   |-- streamer_discharge
-|   |   |-- fedm-streamer.py
-|   |	|-- file_input
-|   |   |-- mesh.xml
-|   |   |-- README.md
-|   |-- time_of_flight
-|   |   |-- fedm-tof.py
-|   |   |-- README.md
-|-- fedm
-|   |-- file_io.py
-|   |-- functions.py
-|   |-- physical_constants.py
-|-- LICENCE
-|-- README.md
-|-- setup.py
-|-- setup.cfg
-|-- pyproject.toml
+├── Examples
+│   ├── glow_discharge
+│   ├── streamer_discharge
+│   └── time_of_flight
+├── fedm
+│   ├── file_io.py
+│   ├── functions.py
+│   ├── __init__.py
+│   ├── physical_constants.py
+│   ├── __pycache__
+│   └── utils.py
+├── LICENSE
+├── pyproject.toml
+├── README.md
+├── run_tests.sh
+├── setup.cfg
+├── setup.py
+└── tests
+    ├── integrated_tests
+    └── unit_tests
 ```
 
 FEDM can be installed within the Docker container using:
@@ -113,7 +112,7 @@ Note that the new experimental version FEniCSx 0.4 has been recently published, 
 
 ## Testing
 
-Testing must be performed within the Docker container. The testing dependencies should 
+Testing must be performed within the Docker container. The testing dependencies should
 be installed using:
 
 ```bash
@@ -162,7 +161,7 @@ The main script is used to set up and solve the problem using the functions stor
    - `reading_transport_coefficients()` is used to read the transport coefficients from the input files
    - `reading_rate_coefficients()` is used to read the rate coefficients from the input files
 
-2. Mesh for FEM discretization. The mesh is either generated using a built-in function (structured mesh) or imported from the external (`.xml` or `.xdmf`) file.
+2. Mesh for FEM discretisation. The mesh is either generated using a built-in function (structured mesh) or imported from the external (`.xml` or `.xdmf`) file.
 
 3. Function spaces. In the examples presented here, a fully coupled solution approach is used, so the native mixed element functions are used for the function space definition. The mixed element list is obtained using the custom function `Mixed_element_list()` which creates a list of the function elements. Since the number of functions varies from problem to problem, the procedure of function definition is automatised by calling the custom function  `Function_definition()`.
 
@@ -198,7 +197,7 @@ The main script is used to set up and solve the problem using the functions stor
 12. Adaptive time stepping. The time-step size control is based on the L2 norm difference between the previous and the current step. Depending on used approximation, relevant variable may be mean electron energy, electron number density or the whole solution vector. The new time step is obtained using the function `adaptive_timestep()` which utilizes PID controller, described in the article.
 
 ## Note from the author
-The FEDM code was developed while the author was learning the Python language. Most of the functions are not written in a Pythonic way and many of them probably already exist. However, since the code has been verified and works quite well in its present form, we have no intention to change or update the functions (i.e., we follow the first rule of programming: "If it ain't broke, don't fix it").
+Initally, the FEDM code was developed while the author was learning the Python language. Most of the functions were not written in a Pythonic way. Thanks to Dr. Peter Hill and Dr. Liam Pattinson of the PlasmaFAIR project, the health check of the code has been performed and the code has been significantly improved.
 
 ## License
 
@@ -206,7 +205,7 @@ In agreement with the FEniCS licensing, FEDM is open source code developed under
 
 ## Acknowledgment
 
-The development of the FEDM is funded by the Deutsche Forschungsgemeinschaft (DFG, German Research Foundation)—project number 407462159. The authors wish to thank the users of [FEniCS forum](https://fenicsproject.discourse.group) for useful information and discussion.
+The development of the FEDM is funded by the Deutsche Forschungsgemeinschaft (DFG, German Research Foundation)—project number 407462159. The authors wish to thank the users of [FEniCS forum](https://fenicsproject.discourse.group) for useful information and discussion. Finally, the authors are grateful to Dr. Peter Hill and Dr. Liam Pattinson of the PlasmaFAIR project for carrying out the health check, and proposing and implementing significant improvements to the code. This support of PlasmaFAIR, funded by EPSRC (grant no. EP/V051822/1), is gratefully acknowledged.
 
 ## Citation
 

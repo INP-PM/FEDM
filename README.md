@@ -37,7 +37,7 @@ sudo apt update
 sudo apt-get install docker-ce docker-ce-cli containerd.io
 ```
 
-After installing the Docker, the latest stable FEniCS image (currently FEniCS 2019.1.0) can be run using the following command in the terminal:
+After installing the Docker, the latest stable FEniCS image (FEniCS 2019.1.0) can be run using the following command in the terminal:
 
 ```bash
 sudo docker run -ti \
@@ -45,6 +45,11 @@ sudo docker run -ti \
     -v /tmp \
     quay.io/fenicsproject/stable
 ```
+
+Note that repeating above described procedure always creates a new container, which may eventually exhaust the local storage. Therefore, it is suggested to restart the same container using
+ ```bash
+ docker restart my_container
+ ```
 
 The following steps will also let you run Docker as a non-root user:
 

@@ -518,8 +518,7 @@ def Boundary_flux(
                 result -= 2.0 * gamma * Ion_flux / (1.0 + ref)
         result = 2.0 * df.pi * result * v * r * ds_temp
     elif bc_type == "Neumann" and equation_type == "drift-diffusion-reaction":
-        # Note: Here we use the built-in dolfin.ds, not the ds_temp passed in.
-        result = 2.0 * df.pi * df.dot(sign * mu * E, normal) * df.exp(u) * v * r * df.ds
+        result = 2.0 * df.pi * df.dot(sign * mu * E, normal) * df.exp(u) * v * r * ds_temp
     else:
         # default, if bc_type is 'zero_flux', or if no other conditions are met.
         result = 0.0

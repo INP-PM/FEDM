@@ -109,7 +109,7 @@ dt = Expression("time_step", time_step = dt_init, degree = 0)  # Time step size 
 dt_old = Expression("time_step", time_step = dt_old_init, degree = 0)  # Time step size expression [s], Initial value is set up to be large in order to reduce initial step of adaptive BDF formula to one.
 dt_old1 = Expression("time_step", time_step = dt_old_init, degree = 0)  # Time step size expression [s], Initial value is set up to be large in order to reduce initial step of adaptive BDF formula to one.
 
-ttol = 2e-3  # Tolerance for adaptive time stepping
+ttol = 1e-3  # Tolerance for adaptive time stepping
 
 ### Setting-up output times and time steps. t_output_list and t_output_step_list need to have the equal length
 t_output_list = [1e-11, 1e-10, 1e-9, 1e-8, 1e-7, 1e-6, 1e-5]  # List of time step intervals (consisting of two consecutive components) at which the results are printed to file

@@ -359,7 +359,7 @@ i = 0
 while i < number_of_boundaries:
     j = 1
     while j < number_of_species:
-        Fb = Boundary_flux('flux source', equation_type[j], particle_type[j], sign[j], mu_si[j], E, normal_plasma, u[j], gamma[i], v[j], ds_plasma(i), r, vth[j], ref_coeff[i][j], Ion_flux)  # Setting up boundary conditions for particle balance equations
+        Fb = Boundary_flux('flux source', equation_type[j], particle_type[j], sign[j], mu_si[j], E, normal_plasma, u[j], gamma[i], v[j], ds_plasma(i+1), r, vth[j], ref_coeff[i][j], Ion_flux)  # Setting up boundary conditions for particle balance equations
         F += Fb
         j += 1
     i += 1
@@ -369,7 +369,7 @@ F_en = weak_form_balance_equation_log_representation(equation_type[number_of_spe
 # Adding boundary integral term in variational formulation of the electron energy balance equation
 i = 0
 while i < number_of_boundaries:
-    F_en += Boundary_flux('flux source', equation_type[number_of_species-1], particle_type[number_of_species-1], sign[number_of_species-1], 5.0*mu_si[number_of_species-1]/3.0, E, normal_plasma, u[0], gamma[i]*u_see_met, v[0], ds_plasma(i), r, 1.3333*vth[number_of_species-1], ref_coeff[i][number_of_species-1], Ion_flux)
+    F_en += Boundary_flux('flux source', equation_type[number_of_species-1], particle_type[number_of_species-1], sign[number_of_species-1], 5.0*mu_si[number_of_species-1]/3.0, E, normal_plasma, u[0], gamma[i]*u_see_met, v[0], ds_plasma(i+1), r, 1.3333*vth[number_of_species-1], ref_coeff[i][number_of_species-1], Ion_flux)
     i += 1
 
 F += F_en  # Adding electron energy balance equation variational fromulation

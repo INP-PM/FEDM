@@ -214,7 +214,7 @@ The development of the FEDM is funded by the Deutsche Forschungsgemeinschaft (DF
 
 ## Citation
 
-Please cite the paper [ADD REFERENCE] if you use the FEDM code for your research.
+Please cite the preprint https://arxiv.org/abs/2212.01288 if you use the FEDM code for your research.
 
 ## Contact
 

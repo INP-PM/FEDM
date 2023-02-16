@@ -38,7 +38,7 @@ relative_tolerance = 1e-4 # Relative tolerance of nonlinear solver
 # ============================================================================
 model = '4_particles'
 coordinates = 'cylindrical'
-semi_implicit = False
+semi_implicit = True
 gas = 'Ar'
 Tgas = 300.0  # [K]
 p0 = 1.0   #[Torr]

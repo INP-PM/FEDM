@@ -239,7 +239,7 @@ D[1] = eval(D_y[1]) # Setting up diffusion coefficient for electrons
 alpha = (1.1944e6 + 4.3666e26 * E_m**(-3))*exp(-2.73e7/E_m)-340.75 # Setting up ionization coefficient
 
 Gamma[0] = 0.0 # Setting up ion flux
-Gamma[1] = Flux_log(sign[1], u[1], D[1], mu[1], E) # Setting up electron flux
+Gamma[1] = Flux(sign[1], u[1], D[1], mu[1], E) # Setting up electron flux
 
 f[0] = alpha*mu[1]*E_m*exp(u[1]) # Ion source term definition
 f[1] = alpha*mu[1]*E_m*exp(u[1]) # Electron source term definition

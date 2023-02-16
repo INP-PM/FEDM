@@ -65,6 +65,8 @@ def main(input_dir=None, output_dir=None):
     particle_species_type = ['Neutral', 'Neutral', 'Ion', 'electrons']  # Defining particle type required for boundary condition: Neutral | Ion | electrons
     n_ic = [N0, 1e12, 1e12, 1e12]  # Initial number density values
 
+    grad_diff = [pst == 'electrons' for pst in particle_species_type]
+
     # ============================================================================
     # Importing reaction matrices, reaction coefficients required for rates and transport coefficients
     # ============================================================================
@@ -345,16 +347,17 @@ def main(input_dir=None, output_dir=None):
     Ion_flux = 0   # Sum of ion fluxes, required for secondary electron emission in boundary condition
     i = 1
     while i < number_of_species:
-        Gamma.append(Flux_log(sign[i], u[i], D_si[i], mu_si[i], E))  # Setting up particle fluxes
+        Gamma.append(Flux(sign[i], u[i], D_si[i], mu_si[i], E, grad_diffusion = grad_diff[i], logarithm_representation = True))  # Setting up particle fluxes
         if particle_species_type[i] == 'Ion':
             Ion_flux += Max(dot(Gamma[i], normal_plasma), 0)  # Setting up ion fluxes for secondary electron emission in boundary condition
         i += 1
-    Gamma_en = Flux_log(sign[number_of_species - 1], u[0], 5.0*D_si[number_of_species - 1]/3.0, 5.0*mu_si[number_of_species - 1]/3.0, E)  # Defining electron energy flux
+# Defining electron energy flux
+    Gamma_en = Flux(sign[number_of_species - 1], u[0], 5.0*D_si[number_of_species - 1]/3.0, 5.0*mu_si[number_of_species - 1]/3.0, E, grad_diffusion = grad_diff[number_of_species - 1], logarithm_representation = True)
     u_see_met = Expression('u_p', u_p = we_metalic, degree = 1)  # Setting mean energy of secondary electrons
 
     f = Source_term('coupled', approximation, power_matrix, loss_matrix, gain_matrix, rate_coefficient_si, N0, u)  # Particle source term definition
     f_en = Energy_Source_term('coupled', power_matrix, loss_matrix, gain_matrix, rate_coefficient_si, energy_loss, u[0]/u[number_of_species-1], N0, u)  # Energy source term definition
-    f_en += -dot(Flux_log(sign[number_of_species-1], u[number_of_species-1], D_si[number_of_species-1], mu_si[number_of_species-1], E), E)  # Adding power input from the electric field
+    f_en += -dot(Flux(sign[number_of_species-1], u[number_of_species-1], D_si[number_of_species-1], mu_si[number_of_species-1], E, grad_diffusion = grad_diff[number_of_species - 1], logarithm_representation = True), E) # Adding power input from the electric field
 
     i = 1
     while i < number_of_species:

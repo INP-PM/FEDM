@@ -64,7 +64,7 @@ file_type = ['pvd', 'pvd', 'pvd'] # creates list of variables for output
 t_old = None # Previous time step
 t0 =  0.0 # Initial time step
 t = t0 # Current time step
-T_final = 2e-8 # Simulation time end [s]
+T_final = 1.4e-8 # Simulation time end [s]
 
 dt_min = 1e-15 # Minimum time step [s]
 dt_max = 5e-12 # Maximum time step [s]
@@ -239,7 +239,7 @@ D[1] = eval(D_y[1]) # Setting up diffusion coefficient for electrons
 alpha = (1.1944e6 + 4.3666e26 * E_m**(-3))*exp(-2.73e7/E_m)-340.75 # Setting up ionization coefficient
 
 Gamma[0] = 0.0 # Setting up ion flux
-Gamma[1] = Flux(sign[1], u[1], D[1], mu[1], E) # Setting up electron flux
+Gamma[1] = Flux(sign[1], u[1], D[1], mu[1], E, grad_diffusion = False) # Setting up electron flux
 
 f[0] = alpha*mu[1]*E_m*exp(u[1]) # Ion source term definition
 f[1] = alpha*mu[1]*E_m*exp(u[1]) # Electron source term definition
@@ -294,6 +294,7 @@ problem = Problem(J, F, bc)
 nonlinear_solver = PETScSNESSolver()
 nonlinear_solver.parameters['relative_tolerance'] = relative_tolerance
 nonlinear_solver.parameters["linear_solver"]= linear_solver
+nonlinear_solver.parameters['maximum_iterations'] = maximum_iterations # Setting up maximum number of iterations
 if linear_solver == 'gmrs':
     nonlinear_solver.parameters["preconditioner"] = "hypre_amg" # setting the preconditioner, uncomment if iterative solver is used
 
@@ -311,18 +312,17 @@ while abs(t-T_final)/T_final > 1e-6:
 
     ## For the constant time step, comment previous and  uncomment following code block
     # t += dt.time_step
-    # try_except = True
-    #
-    # assigner.assign(var_list_new, u_new)
+    # print_rank_0(
+    #     f"Attempting to solve the equation for t = {t} with dt = {dt.time_step}",
+    #     flush=True,
+    # )
+    # nonlinear_solver.solve(problem, u_new.vector())
+    # assigner.assign(variable_list_new, u_new)
     # with open(files.error_file, "a") as f_err:
-    #     i = 0
-    #     while i < len(var_list_new) - 1:
-    #         # temp1 = project(exp(var_list_new[i]), solver_type = 'gmres')
-    #         # temp0 = project(exp(var_list_old[i]), solver_type = 'gmres')
-    #         # error[i] = l2_norm(t, dt.time_step, temp1, temp0)
-    #         error[i] = l2_norm(t, dt.time_step, var_list_new[i], var_list_old[i])
-    #         f_err.write("{:<23}".format(str(error[i])) + '  ')
-    #         i += 1
+    #     error[0] = norm(
+    #         variable_list_new[-2].vector() - variable_list_old[-2].vector() + DOLFIN_EPS
+    #     ) / norm(variable_list_old[-2].vector() + DOLFIN_EPS)
+    #     f_err.write("{:<23}".format(str(error[0])) + '  ')
     #     f_err.write("{:<23}".format(str(dt_old.time_step)) + '  ' + "{:<23}".format(str(dt.time_step)) + '\n')
     #     f_err.flush()
     # max_error[0] = max(error)

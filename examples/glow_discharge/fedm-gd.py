@@ -102,17 +102,17 @@ file_type = ['pvd', 'xdmf', 'xdmf', 'xdmf'] # creates list of variables for outp
 t_old = None  # Previous time step
 t0 =  0.0  # Initial time step
 t = t0  # Current time step
-T_final = 1e-4  # Simulation time end [s]
+T_final = 5e-5  # Simulation time end [s]
 
 dt_min = 1e-15  # Minimum time step [s]
-dt_max = 1e-6  # Maximum time step [s]
+dt_max = 1e-8  # Maximum time step [s]
 dt_init = 1e-13  # Initial time step size [s]
 dt_old_init = 1e30  # Initial time step size [s], extremely large value is used to initiate adaptive BDF2
 dt = Expression("time_step", time_step = dt_init, degree = 0)  # Time step size [s]
 dt_old = Expression("time_step", time_step = dt_old_init, degree = 0)  # Time step size expression [s], Initial value is set up to be large in order to reduce initial step of adaptive BDF formula to one.
 dt_old1 = Expression("time_step", time_step = dt_old_init, degree = 0)  # Time step size expression [s], Initial value is set up to be large in order to reduce initial step of adaptive BDF formula to one.
 
-ttol = 1e-3  # Tolerance for adaptive time stepping
+ttol = 5e-4  # Tolerance for adaptive time stepping
 
 ### Setting-up output times and time steps. t_output_list and t_output_step_list need to have the equal length
 t_output_list = [1e-11, 1e-10, 1e-9, 1e-8, 1e-7, 1e-6, 1e-5]  # List of time step intervals (consisting of two consecutive components) at which the results are printed to file

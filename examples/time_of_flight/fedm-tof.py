@@ -79,7 +79,7 @@ boundaries = [['line', 0.0, 0.0, 0.0, box_width],\
 # ============================================================================
 # Mesh setup. Structured mesh is generated using built-in mesh generator.
 # ============================================================================
-mesh = RectangleMesh(Point(0, 0), Point(box_width, box_height), 80, 80) # Generating structured mesh.
+mesh = RectangleMesh(Point(0, 0), Point(box_width, box_height), 160, 320) # Generating structured mesh.
 mesh_statistics(mesh) # Prints number of elements, minimal and maximal cell diameter.
 h = MPI.max(MPI.comm_world, mesh.hmax()) # Maximuml cell size in mesh.
 

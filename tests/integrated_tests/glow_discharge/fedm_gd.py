@@ -44,6 +44,7 @@ def main(input_dir=None, output_dir=None):
     # ============================================================================
     model = '4_particles'
     coordinates = 'cylindrical'
+    semi_implicit = True
     gas = 'Ar'
     Tgas = 300.0  # [K]
     p0 = 1.0   #[Torr]
@@ -110,7 +111,7 @@ def main(input_dir=None, output_dir=None):
     T_final = 1e-11  # Simulation time end [s]
 
     dt_min = 1e-15  # Minimum time step [s]
-    dt_max = 1e-6  # Maximum time step [s]
+    dt_max = 1e-8  # Maximum time step [s]
     dt_init = 1e-13  # Initial time step size [s]
     dt_old_init = 1e30  # Initial time step size [s], extremely large value is used to initiate adaptive BDF2
     dt = Expression("time_step", time_step = dt_init, degree = 0)  # Time step size [s]
@@ -320,15 +321,20 @@ def main(input_dir=None, output_dir=None):
     Transport_coefficient_interpolation('initial', Diffusion_dependence, N0, Tgas, D, D_x, D_y, mean_energy, redE, mu)  # Diffusion coefficients interpolation
     Rate_coefficient_interpolation('initial', k_dependence, rate_coefficient, k_x, k_y, mean_energy, redE, Te = 0, Tgas = 0)  # Rates coefficients interpolation
 
-    rate_coefficient_si = semi_implicit_coefficients(k_dependence, mean_energy_e, mean_energy_old, rate_coefficient, rate_coefficient_diff)
-    mu_si = semi_implicit_coefficients(mobility_dependence, mean_energy_e, mean_energy_old, mu, mu_diff)
-    D_si = semi_implicit_coefficients(Diffusion_dependence, mean_energy_e, mean_energy_old, D, D_diff)
+    if semi_implicit == True:
+        rate_coefficient_si = semi_implicit_coefficients(k_dependence, mean_energy_e, mean_energy_old, rate_coefficient, rate_coefficient_diff)
+        mu_si = semi_implicit_coefficients(mobility_dependence, mean_energy_e, mean_energy_old, mu, mu_diff)
+        D_si = semi_implicit_coefficients(Diffusion_dependence, mean_energy_e, mean_energy_old, D, D_diff)
 
-    i = 0
-    while i < len(k_y):
-        if k_dependence[i] == "Umean":
-            rate_coefficient_diff[i].vector()[:] = np.interp(mean_energy_old.vector()[:], k_x[i], k_diff[i])
-        i += 1
+        i = 0
+        while i < len(k_y):
+            if k_dependence[i] == "Umean":
+                rate_coefficient_diff[i].vector()[:] = np.interp(mean_energy_old.vector()[:], k_x[i], k_diff[i])
+            i += 1
+    else:
+        rate_coefficient_si = rate_coefficient
+        mu_si = mu
+        D_si = D
 
     mu_diff[number_of_species-1].vector()[:] = np.interp(mean_energy_old.vector()[:], mu_x[number_of_species-1], mue_diff)
     D_diff[number_of_species-1].vector()[:] = np.interp(mean_energy_old.vector()[:], D_x[number_of_species-1], De_diff)

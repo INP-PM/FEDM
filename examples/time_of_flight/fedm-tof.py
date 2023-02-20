@@ -134,6 +134,9 @@ nonlinear_solver.parameters["linear_solver"]= linear_solver # Setting up linear 
 nonlinear_solver.parameters['maximum_iterations'] = maximum_iterations # Setting up maximum number of iterations
 # nonlinear_solver.parameters["preconditioner"]="hypre_amg" # Setting the preconditioner, uncomment if iterative solver is used
 
+n_exact = Function(V) # Defining function for storing the data (analytical solution)
+n_num = Function(V) # Defining function for storing the data (numerical solution)
+
 while abs(t-T_final)/T_final > 1e-6:
     t_old = t # Updating old time steps
     u_old1.assign(u_old) # Updating variable value in k-2 time step
@@ -149,8 +152,8 @@ while abs(t-T_final)/T_final > 1e-6:
     nonlinear_solver.solve(problem, u_new.vector()) # Solving the system of equations
 
     if abs(t-t_output)/t_output <= 1e-6:
-        n_exact = project(exp(u_analytical), V, solver_type='mumps')
-        n_num = project(exp(u_new), V, solver_type='mumps')
+        n_exact.assign(project(exp(u_analytical), V, solver_type='mumps'))
+        n_num.assign(project(exp(u_new), V, solver_type='mumps'))
         relative_error = errornorm(n_num, n_exact, 'l2')/norm(n_exact, 'l2') # Calculating relative difference between exact analytical and numerical solution
         with open(files.error_file, "a") as f_err:
             f_err.write('h_max = ' + str(h) + '\t dt = ' + str(dt.time_step) + '\t relative_error = ' + str(relative_error) + '\n')

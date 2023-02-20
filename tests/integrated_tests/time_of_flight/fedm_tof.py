@@ -47,6 +47,10 @@ def main(output_dir = None):
     M = me
     charge = -elementary_charge
     equation_type = ['drift-diffusion-reaction'] # Defining the type of the equation (reaction | diffusion-reaction | drift-diffusion-reaction)
+    wez = 1.7e5 # Electron drift velocity z component [m/s] 
+    De = 0.12 # Electron Diffusion coefficient [m^2/s]
+    alpha_e = 5009.51 # Effective ionization coefficient [1/m]
+
     log('properties', files.model_log, gas, model, particle_species_type, M, charge) # Writting particle properties into a log file
     vtkfile_u = output_files('pvd', 'number density', particle_species_type) # Setting-up output files
 
@@ -109,20 +113,20 @@ def main(output_dir = None):
     u_old1 = Function(V) # Defining function for storing the data at k-2 time step
     u_new = Function(V) # Defining function for storing the data at k time step
 
-    u_analytical  = Expression('std::log(exp(-(pow(x[1]-w*t, 2)+pow(x[0], 2))/(4.0*D*t)+alpha*w*t)/pow(4*D*t*pi,1.5))', D = 0.12, w = 1.7e5, alpha = 5009.51, t = t, pi=pi,  degree = 3) # Analytical solution of the particle balance equation.
+    u_analytical  = Expression('std::log(exp(-(pow(x[1]-w*t, 2)+pow(x[0], 2))/(4.0*D*t)+alpha*w*t)/pow(4*D*t*pi,1.5))', D = De, w = wez, alpha = alpha_e, t = t, pi=pi,  degree = 3) # Analytical solution of the particle balance equation.
     u_old.assign(interpolate(u_analytical , V)) # Setting up value at k-1 time step
     u_old1.assign(interpolate(u_analytical , V)) # Setting up value at k-2 time step
 
-    w = interpolate(Constant(('0','1.7e5')), W) # Electron drift velocity [m/s]
-    D = interpolate(Constant(0.12), V) # Diffusion coefficient [m^2/s]
-    alpha_eff = interpolate(Constant(5009.51), V) #Effective ionization coefficient [1/m]
+    w = interpolate(Constant(('0', wez)), W) # Electron drift velocity [m/s]
+    D = interpolate(Constant(De), V) # Diffusion coefficient [m^2/s]
+    alpha_eff = interpolate(Constant(alpha_e), V) # Effective ionization coefficient [1/m]
 
     Gamma = -grad(D*exp(u)) + w*exp(u) # Defining electron flux [m^{-2} s^{-1}]
-    f = Expression('exp(-(pow(x[1]-w*t, 2)+pow(x[0], 2))/(4.0*D*t)+alpha*w*t)*(w*alpha)/(8*pow(pi,1.5)*pow(D*t, 1.5))', D = 0.12, w = 1.7e5, alpha = 5009.51, t = t, pi=pi,  degree = 2) # Defining source term
+    f = Expression('exp(-(pow(x[1]-w*t, 2)+pow(x[0], 2))/(4.0*D*t)+alpha*w*t)*(w*alpha)/(8*pow(pi,1.5)*pow(D*t, 1.5))', D = De, w = wez, alpha = alpha_e, t = t, pi=pi,  degree = 2) # Defining source term
 
     F = weak_form_balance_equation_log_representation(equation_type[0], dt, dt_old, dx, u, u_old, u_old1, v, f, Gamma, r) # Definition of variational formulation of the balance equation for the electrons
 
-    u_new.assign(interpolate(Expression('std::log(exp(-(pow(x[1]-w*t, 2)+pow(x[0], 2))/(4.0*D*t)+alpha*w*t)/pow(4.0*D*t*pi,1.5) + DOLFIN_EPS)', D = 0.12, w = 1.7e5, alpha = 5009.51, t = t, pi=pi,  degree = 2), V)) # Setting up initial guess for nonlinear solver
+    u_new.assign(interpolate(Expression('std::log(exp(-(pow(x[1]-w*t, 2)+pow(x[0], 2))/(4.0*D*t)+alpha*w*t)/pow(4.0*D*t*pi,1.5) + DOLFIN_EPS)', D = De, w = wez, alpha = alpha_e, t = t, pi=pi,  degree = 2), V)) # Setting up initial guess for nonlinear solver
 
     # ============================================================================
     # Setting-up nonlinear solver

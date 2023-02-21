@@ -42,6 +42,11 @@ particle_species_type = ['electrons', 'analytical solution'] # Defining particle
 M = me
 charge = -elementary_charge
 equation_type = ['drift-diffusion-reaction'] # Defining the type of the equation (reaction | diffusion-reaction | drift-diffusion-reaction)
+wez = 1.7e5 # electron velocity 
+De = 0.12 # electron diffusion coefficient
+alpha_e = 5009.51 # reaction coefficient 
+
+
 log('properties', files.model_log, gas, model, particle_species_type, M, charge) # Writting particle properties into a log file
 vtkfile_u = output_files('pvd', 'number density', particle_species_type) # Setting-up output files
 
@@ -99,20 +104,20 @@ u_old = Function(V) # Defining function for storing the data at k-1 time step
 u_old1 = Function(V) # Defining function for storing the data at k-2 time step
 u_new = Function(V) # Defining function for storing the data at k time step
 
-u_analytical  = Expression('std::log(exp(-(pow(x[1]-w*t, 2)+pow(x[0], 2))/(4.0*D*t)+alpha*w*t)/pow(4*D*t*pi,1.5))', D = 0.12, w = 1.7e5, alpha = 5009.51, t = t, pi=pi,  degree = 3) # Analytical solution of the particle balance equation.
+u_analytical  = Expression('std::log(exp(-(pow(x[1]-w*t, 2)+pow(x[0], 2))/(4.0*D*t)+alpha*w*t)/pow(4*D*t*pi,1.5))', D = De, w = wez, alpha = alpha_e, t = t, pi=pi,  degree = 3) # Analytical solution of the particle balance equation.
 u_old.assign(interpolate(u_analytical , V)) # Setting up value at k-1 time step
 u_old1.assign(interpolate(u_analytical , V)) # Setting up value at k-2 time step
 
-w = interpolate(Constant(('0','1.7e5')), W) # Electron drift velocity [m/s]
-D = interpolate(Constant(0.12), V) # Diffusion coefficient [m^2/s]
-alpha_eff = interpolate(Constant(5009.51), V) #Effective ionization coefficient [1/m]
+w = interpolate(Constant(('0', wez)), W) # Electron drift velocity [m/s]
+D = interpolate(Constant(De), V) # Diffusion coefficient [m^2/s]
+alpha_eff = interpolate(Constant(alpha_e), V) #Effective ionization coefficient [1/m]
 
 Gamma = -grad(D*exp(u)) + w*exp(u) # Defining electron flux [m^{-2} s^{-1}]
-f = Expression('exp(-(pow(x[1]-w*t, 2)+pow(x[0], 2))/(4.0*D*t)+alpha*w*t)*(w*alpha)/(8*pow(pi,1.5)*pow(D*t, 1.5))', D = 0.12, w = 1.7e5, alpha = 5009.51, t = t, pi=pi,  degree = 2) # Defining source term
+f = Expression('exp(-(pow(x[1]-w*t, 2)+pow(x[0], 2))/(4.0*D*t)+alpha*w*t)*(w*alpha)/(8*pow(pi,1.5)*pow(D*t, 1.5))', D = De, w = wez, alpha = alpha_e, t = t, pi=pi,  degree = 2) # Defining source term
 
 F = weak_form_balance_equation_log_representation(equation_type[0], dt, dt_old, dx, u, u_old, u_old1, v, f, Gamma, r) # Definition of variational formulation of the balance equation for the electrons
 
-u_new.assign(interpolate(Expression('std::log(exp(-(pow(x[1]-w*t, 2)+pow(x[0], 2))/(4.0*D*t)+alpha*w*t)/pow(4.0*D*t*pi,1.5) + DOLFIN_EPS)', D = 0.12, w = 1.7e5, alpha = 5009.51, t = t, pi=pi,  degree = 2), V)) # Setting up initial guess for nonlinear solver
+u_new.assign(interpolate(Expression('std::log(exp(-(pow(x[1]-w*t, 2)+pow(x[0], 2))/(4.0*D*t)+alpha*w*t)/pow(4.0*D*t*pi,1.5) + DOLFIN_EPS)', D = De, w = wez, alpha = alpha_e, t = t, pi=pi,  degree = 2), V)) # Setting up initial guess for nonlinear solver
 
 # ============================================================================
 # Setting-up nonlinear solver
@@ -129,6 +134,9 @@ nonlinear_solver.parameters["linear_solver"]= linear_solver # Setting up linear 
 nonlinear_solver.parameters['maximum_iterations'] = maximum_iterations # Setting up maximum number of iterations
 # nonlinear_solver.parameters["preconditioner"]="hypre_amg" # Setting the preconditioner, uncomment if iterative solver is used
 
+n_exact = Function(V) # Defining function for storing the data (analytical solution)
+n_num = Function(V) # Defining function for storing the data (numerical solution)
+
 while abs(t-T_final)/T_final > 1e-6:
     t_old = t # Updating old time steps
     u_old1.assign(u_old) # Updating variable value in k-2 time step
@@ -144,8 +152,8 @@ while abs(t-T_final)/T_final > 1e-6:
     nonlinear_solver.solve(problem, u_new.vector()) # Solving the system of equations
 
     if abs(t-t_output)/t_output <= 1e-6:
-        n_exact = project(exp(u_analytical), V, solver_type='mumps')
-        n_num = project(exp(u_new), V, solver_type='mumps')
+        n_exact.assign(project(exp(u_analytical), V, solver_type='mumps'))
+        n_num.assign(project(exp(u_new), V, solver_type='mumps'))
         relative_error = errornorm(n_num, n_exact, 'l2')/norm(n_exact, 'l2') # Calculating relative difference between exact analytical and numerical solution
         with open(files.error_file, "a") as f_err:
             f_err.write('h_max = ' + str(h) + '\t dt = ' + str(dt.time_step) + '\t relative_error = ' + str(relative_error) + '\n')

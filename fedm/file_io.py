@@ -20,7 +20,13 @@ df.set_log_level(level)
 
 
 def truncate_file(path: Path) -> None:
-    """Deletes contents of file, leaving it as an empty file"""
+    """
+    Deletes contents of file, leaving it as an empty file.
+    If the file does not exist, creates the empty file and any directories up to it.
+    """
+    path = Path(path)
+    if not path.parent.exists():
+        path.parent.mkdir(parents=True)
     with open(path, "w") as _:
         pass
 

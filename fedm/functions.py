@@ -81,6 +81,16 @@ class LineSubDomain(df.SubDomain):
         in_r_range = df.between(r, self._r_range)
         in_z_range = df.between(z, self._z_range)
         return in_r_range and in_z_range and on_boundary
+    
+class PointSubDomain(df.SubDomain):
+    def __init__(self, z_range: Tuple[float, float]):
+        super().__init__()
+        self._z_range = z_range
+
+    def inside(self, x: List[float], on_boundary: bool) -> bool:
+        z = x[0]
+        in_z_range = df.between(z, self._z_range)
+        return in_z_range and on_boundary
 
 
 def Marking_boundaries(
@@ -110,6 +120,10 @@ def Marking_boundaries(
             z1, z2 = boundary[1] - eps, boundary[2] + eps
             r1, r2 = boundary[3] - eps, boundary[4] + eps
             bmark = LineSubDomain((r1, r2), (z1, z2))
+        elif boundary_type == "point":
+            eps = df.DOLFIN_EPS
+            z1, z2 = boundary[1] - eps, boundary[2] + eps
+            bmark = PointSubDomain((z1, z2))
         else:
             err_msg = dedent(
                 f"""\
@@ -414,6 +428,7 @@ def Boundary_flux(
     vth: float = 0.0,
     ref: float = 1.0,
     Ion_flux: float = 0.0,
+    log_representation: bool = True,
 ):
     """
     Function defines boundary conditions for different equations.

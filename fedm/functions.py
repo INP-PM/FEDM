@@ -228,25 +228,28 @@ def Min(a, b):
     Returns minimum value of a and b.
     """
     return (a + b - abs(a - b)) / df.Constant(2.0)
+    
 
-
-def Flux(sign, u, D, mu, E):
+def Flux(sign, u, D, mu, E, grad_diffusion = True, logarithm_representation = True):
     """
     Defines particle flux using drift-diffusion approximation.
     Input arguments are particle charge, number density,
-    diffusion coefficient, mobility and electric field.
+    diffusion coefficient, mobility and electric field. The additional
+    arguments are used to specify if the gradient of the diffusion 
+    should be considered and whether logarithmic representation 
+    is used.
     """
-    return -df.grad(D * u) + sign * mu * E * u
-
-
-def Flux_log(sign, u, D, mu, E):
-    """
-    Defines particle flux using drift-diffusion and logarithmic approximation.
-    Input arguments are particle charge, number density,
-    Diffusion coefficient, mobility and electric field.
-    """
-    return -df.grad(D * df.exp(u)) + sign * mu * E * df.exp(u)
-
+    if logarithm_representation == True:
+        u_e = df.exp(u)
+    else:
+        u_e = u
+    Drift_component = sign * mu * E * u_e
+    if grad_diffusion == True:
+        Diffusion_component = - df.grad(D * u_e)
+    else:
+        Diffusion_component = - D * df.grad(u_e)
+    return Diffusion_component + Drift_component
+    
 
 def weak_form_balance_equation(
     equation_type: str,
@@ -897,14 +900,19 @@ def Transport_coefficient_interpolation(
         # For 'const', only do something if status is 'initial'
         if dependence == "const" and status == "initial":
             k_coeff.vector()[:] = ky / N0
+            k_coeff.vector().update_ghost_values()
         elif dependence == "Umean":
             k_coeff.vector()[:] = np.interp(energy.vector()[:], kx, ky) / N0
+            k_coeff.vector().update_ghost_values()
         elif dependence == "E/N":
             k_coeff.vector()[:] = np.interp(redfield.vector()[:], kx, ky) / N0
+            k_coeff.vector().update_ghost_values()
         elif dependence == "ESR":
             k_coeff.vector()[:] = kB * Tgas * mu.vector()[:] / elementary_charge
+            k_coeff.vector().update_ghost_values()
         elif dependence == "Tgas":
             k_coeff.vector()[:] = np.interp(Tgas, kx, ky) / N0
+            k_coeff.vector().update_ghost_values()
         else:
             pass  # If no conditions are met, do nothing
 
@@ -968,8 +976,8 @@ def Rate_coefficient_interpolation(
     possible_dependences = [0, "const", "Umean", "E/N", "Te", "fun:Te,Tgas", "fun:Tgas"]
 
     # Avoid linter warnings about unused variables...
-    Tgas = float(Tgas)
-    Te = float(Te)
+    # Tgas = float(Tgas)
+    # Te = float(Te)
 
     if status not in possible_statuses:
         raise ValueError(
@@ -995,23 +1003,27 @@ def Rate_coefficient_interpolation(
         # For 'const' and 'fun:...' only do something if status is 'initial'
         if dependence == "const" and status == "initial":
             k_coeff.vector()[:] = ky
+            k_coeff.vector().update_ghost_values()
         # Catch both 'fun:Te,Tgas' and 'fun:Tgas'
-        elif dependence[:3] == "fun" and status == "initial":
+        elif dependence == "fun" and status == "initial":
             try:
                 k_coeff = eval(ky)
+                k_coeff.vector().update_ghost_values()
             except Exception as exc:
                 raise RuntimeError(
                     "fedm.Rate_coefficient_interpolation: ky eval failed"
                 ) from exc
-        # For 'Te', only do something if status is 'update'
-        elif dependence == "Te" and status == "update":
+        elif dependence == "Te":
             k_coeff.vector()[:] = np.interp(
                 2 * energy.vector()[:] / (3 * kB_eV), kx, ky
             )
+            k_coeff.vector().update_ghost_values()
         elif dependence == "Umean":
             k_coeff.vector()[:] = np.interp(energy.vector()[:], kx, ky)
+            k_coeff.vector().update_ghost_values()
         elif dependence == "E/N":
             k_coeff.vector()[:] = np.interp(redfield.vector()[:], kx, ky)
+            k_coeff.vector().update_ghost_values()
         else:
             pass  # If no conditions are met, do nothing
 
@@ -1475,3 +1487,4 @@ def BoundaryGradient(var, zeroDomain, source_term, ds_extract, epsilon=8.8541878
     df.solve(A, En.vector(), b, "gmres", "hypre_amg")
 
     return En
+

@@ -214,7 +214,7 @@ The development of the FEDM is funded by the Deutsche Forschungsgemeinschaft (DF
 
 ## Citation
 
-Please cite the preprint https://arxiv.org/abs/2212.01288 if you use the FEDM code for your research.
+Please cite the article Aleksandar P. Jovanović, Detlef Loffhagen, Markus M. Becker 2023 Introduction and verification of FEDM, an open-source FEniCS-based discharge modelling code Plasma Sources Sci. Technol. in press https://doi.org/10.1088/1361-6595/acc54b if you use the FEDM code for your research.
 
 ## Contact
 

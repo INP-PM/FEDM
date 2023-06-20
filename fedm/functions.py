@@ -541,6 +541,74 @@ def Boundary_flux(
         # default, if bc_type is 'zero_flux', or if no other conditions are met.
         result = 0.0
     return result
+
+
+def Boundary_flux_1d(
+    bc_type: str,
+    equation_type: str,
+    particle_type: str,
+    sign: float,
+    mu: Any,
+    E: Any,
+    normal: Any,
+    u: Any,
+    gamma: Any,
+    v: Any,
+    vth: float = 0.0,
+    ref: float = 1.0,
+    Ion_flux: float = 0.0,
+):
+    """
+    Function defines boundary conditions for different equations.
+
+    Parameters
+    ----------
+        Type of boundary condition. Options are 'zero flux', 'flux source' or 'Neumann'
+    equation_type : str
+        Choices are 'reaction', 'diffusion-reaction' or 'drift-diffusion-reaction'
+    particle_type : str
+        Choices are 'Heavy' or 'electrons'.
+    sign: float
+        Particle charge sign
+    mu: df.Function
+        Mobility
+    E
+        Electric field, Dolfin ComponentTensor
+    normal
+        Dolfin FacetNormal
+    u
+        Trial function
+    gamma
+        Secondary electron emission coefficient
+    v
+        Test function
+    vth: float, default 0.0
+        Thermal velocity
+    ref: float, default 1.0
+        Reflection coefficient for specified particles species and boundary.
+    Ion_flux: float, default 0.0
+        Flux of ions
+
+    Returns
+    -------
+    df.Form
+        If bc_type is 'flux source' and there is a diffusion term in equation_type.
+        Also if the user combines Neumann boundaries with a drift-diffusion-reaction
+        equation.
+    float
+        Otherwise.
+
+    Raises
+    ------
+    ValueError
+        If bc_type is not recognised. If bc_type is not 'zero flux', also raised if
+        equation_type is not recognised. Furthermore, if equation_type is
+        'drift-diffusion-reaction', raises if particle_type is not recognised.
+    """
+    bc_types = ["zero flux", "flux source", "Neumann"]
+    equation_types = ["reaction", "diffusion-reaction", "drift-diffusion-reaction"]
+    particle_types = ["Heavy", "electrons"]
+
     # If provided bc_type has an underscore instead of a space, correct it
     if "_" in bc_type:
         warnings.warn("fedm.BoundaryFlux: bc_type should have spaces, not underscores")
@@ -587,9 +655,9 @@ def Boundary_flux(
             result *= (0.5 * vth + abs(sign * mu * df.dot(E, normal))) * df.exp(u)
             if particle_type == "electrons":
                 result -= 2.0 * gamma * Ion_flux / (1.0 + ref)
-        result = 2.0 * df.pi * result * v * r * ds_temp
+        result = result * v
     elif bc_type == "Neumann" and equation_type == "drift-diffusion-reaction":
-        result = 2.0 * df.pi * df.dot(sign * mu * E, normal) * df.exp(u) * v * r * ds_temp
+        result = df.dot(sign * mu * E, normal) * df.exp(u) * v
     else:
         # default, if bc_type is 'zero_flux', or if no other conditions are met.
         result = 0.0

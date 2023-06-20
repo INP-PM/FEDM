@@ -30,7 +30,7 @@ parameters["form_compiler"]["optimize"]     = True
 parameters["form_compiler"]["cpp_optimize"] = True
 parameters["std_out_all_processes"] = False
 parameters['krylov_solver']['nonzero_initial_guess'] = True
-parameters["form_compiler"]["quadrature_degree"] = 2
+#parameters["form_compiler"]["quadrature_degree"] = 2
 
 # Defining tye of used solver and its parameters.
 linear_solver = "mumps" # Type of linear solver lu | mumps | gmres | bicgstab
@@ -86,8 +86,8 @@ dt_old = Expression("time_step", time_step = dt_old_init, degree = 0) # Time ste
 ttol = 1e-3 # Tolerance for adaptive time stepping
 
 ### Setting-up output times and time steps. t_output_list and t_output_step_list need to have same length
-t_output_list = [1e-11, 1e-10, 1e-9] # List of time step intervals (consisting of two consecutive components) at which the results are printed to file
-t_output_step_list = [1e-11, 1e-10, 1e-9] # List of time step sizes for corresponding interval
+t_output_list = [1e-12, 1e-11, 1e-10, 1e-9] # List of time step intervals (consisting of two consecutive components) at which the results are printed to file
+t_output_step_list = [1e-12, 1e-11, 1e-10, 1e-9] # List of time step sizes for corresponding interval
 t_output_step = t_output_list[0] # Current time step at which the results are printed to file
 t_output = t_output_step_list[0] # Current output time length
 
@@ -124,17 +124,8 @@ log('properties', files.model_log, gas, model, particle_species_file_names, M, c
 # Mesh setup and boundary measure redefinition. Structured mesh is generated using built-in mesh generator
 # ===========================================================================================================================
 #mesh = RectangleMesh(Point(0, 0), Point(box_width, box_height), 500, 500, "crossed")
-mesh = Mesh('mesh_coarse.xml') # Importing mesh from xml file
+mesh = Mesh('mesh_compare.xml') # Importing mesh from xml file
 
-# mesh = Mesh()
-# with XDMFFile("mesh.xdmf") as file:
-#     file.read(mesh)
-#mesh = Mesh('mesh.xmdf') # Importing mesh from xml file
-# #mesh_bound = Mesh('mf.xmdf')
-
-# mesh_bound = Mesh()
-# with XDMFFile("mf.xdmf") as file:
-#     file.read(mesh_bound)
 
 #mesh_statistics(mesh) # Prints number of elements, minimum and maximal cell diameter
 boundary_mesh_function = Marking_boundaries(mesh, boundaries) # Marking boundaries required for boundary conditions
@@ -194,10 +185,6 @@ u1 = 5.0e19
 
 box_width = 0.0011  #[m]
 box_height = 0.002 #[m]
-# u_oldV[0] = interpolate(Expression('std::log(1e13+5e18*exp(-(pow(x[0], 2)+pow(x[1]-1e-2, 2))/pow(l, 2)))', degree = 1), V)
-# u_oldV[1] = interpolate(Expression('std::log(1e13)', degree = 1), V)
-# u_newV[0] = interpolate(Expression('std::log(1e13+5e18*exp(-(pow(x[0], 2)+pow(x[1]-1e-2, 2))/pow(l, 2)))', degree = 1), V)
-# u_newV[1] = interpolate(Expression('std::log(1e13)', degree = 1), V)
 
 u_oldV[0] = interpolate(Expression('std::log(u0 + u1 * exp(-(pow(x[0], 2)+pow(x[1]-x1, 2))/pow(l, 2)))',u0=u0, u1=u1, x1=x1, l=l, degree = 1), V)
 u_oldV[1] = interpolate(Expression('std::log(u0)', u0=u0, degree = 1), V)
@@ -289,7 +276,19 @@ F = 0.0
 # ============================================================================
 i = 0
 while i < number_of_species:
-    F += weak_form_balance_equation_log_representation(equation_type[i], dt, dt_old, dx, u[i], u_old[i], u_old1[i], v[i], f[i], Gamma[i], r, D[i]) # Setting up variational formulation of electron energy balance equations
+    F += weak_form_balance_equation_log_representation(
+        equation_type=equation_type[i], 
+        dt=dt, 
+        dt_old=dt_old, 
+        dx=dx, 
+        u=u[i], 
+        u_old=u_old[i], 
+        u_old1=u_old1[i], 
+        v=v[i], 
+        f=f[i], 
+        Gamma=Gamma[i], 
+        r=r, 
+        D=D[i]) # Setting up variational formulation of electron energy balance equations
     i += 1
 
 F += weak_form_Poisson_equation(dx, u[number_of_equations - 1], v[number_of_equations - 1], f[number_of_equations - 1], r) # Adding Poisson equation variational formulation
@@ -329,21 +328,29 @@ problem = Problem(J, F, bc)
 nonlinear_solver = PETScSNESSolver()
 nonlinear_solver.parameters['relative_tolerance'] = relative_tolerance
 nonlinear_solver.parameters["linear_solver"]= linear_solver
+nonlinear_solver.parameters['maximum_iterations'] = maximum_iterations
 if linear_solver == 'gmrs':
     nonlinear_solver.parameters["preconditioner"] = "hypre_amg" # setting the preconditioner, uncomment if iterative solver is used
+
+ite_tot = 0 
+with open("iteration.csv","a") as f:
+    f.write("iteration, dt\n")
 
 # ============================================================================
 # Time loop
 # ============================================================================
-while abs(t-T_final)/T_final > 1e-6:
+while t < T_final:
     t_old = t # Updating old time step
     u_old1.assign(u_old)
     u_old.assign(u_new)
     assigner.assign(variable_list_old, u_old)
 
     ## Solving problem with adaptive time step
-    t = adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, variable_list_new, variable_list_old, assigner, error, files.error_file, max_error, ttol, dt_min, time_dependent_arguments = [], approximation = approximation)
+    t, ite = adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, variable_list_new, variable_list_old, assigner, error, files.error_file, max_error, ttol, dt_min, time_dependent_arguments = [], approximation = approximation)
 
+    ite_tot += ite
+    with open("iteration.csv","a") as f:
+        f.write("%s, %s \n " % (ite_tot, dt.time_step) )
     ## For the constant time step, comment previous and  uncomment following code block
     # t += dt.time_step
     # try_except = True

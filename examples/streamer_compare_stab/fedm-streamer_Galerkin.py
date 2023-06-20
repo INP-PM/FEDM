@@ -364,6 +364,12 @@ nonlinear_solver.parameters['maximum_iterations'] = maximum_iterations
 if linear_solver == 'gmrs':
     nonlinear_solver.parameters["preconditioner"] = "hypre_amg" # setting the preconditioner, uncomment if iterative solver is used
 
+ite_tot = 0
+
+with open("iteration.csv","a") as f:
+    f.write("iteration, dt\n")
+
+
 # ============================================================================
 # Time loop
 # ============================================================================
@@ -374,7 +380,14 @@ while abs(t-T_final)/T_final > 1e-6:
     assigner.assign(variable_list_old, u_old)
 
     ## Solving problem with adaptive time step
-    t = adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, variable_list_new, variable_list_old, assigner, error, files.error_file, max_error, ttol, dt_min, time_dependent_arguments = [], approximation = approximation)
+    t, ite = adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, variable_list_new, variable_list_old, assigner, error, files.error_file, max_error, ttol, dt_min, time_dependent_arguments = [], approximation = approximation)
+
+    ite_tot += ite
+
+    ite_tot = 0
+
+    with open("iteration.csv","a") as f:
+        f.write("%s, %s\n" % (ite_tot, dt.time_step))
 
     ## For the constant time step, comment previous and  uncomment following code block
     # t += dt.time_step

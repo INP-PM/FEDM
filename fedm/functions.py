@@ -1098,6 +1098,7 @@ def adaptive_solver(
     max_error: List[float],
     ttol: float,
     dt_min: float,
+    ite: int = 0,
     time_dependent_arguments: Optional[List[Any]] = None,
     approximation: str = "LMEA",
 ) -> float:
@@ -1171,7 +1172,8 @@ def adaptive_solver(
                 arg.t = t
 
         # solving the equation
-        nonlinear_solver.solve(problem, u_new.vector())
+        ite0, _  = nonlinear_solver.solve(problem, u_new.vector())
+        ite += ite0
 
         # assigning newly calculated values to post-processing variablables
         assigner.assign(var_list_new, u_new)
@@ -1233,7 +1235,7 @@ def adaptive_solver(
         assigner.assign(var_list_new, u_new)
 
         # Call self with args reset and new time step
-        t = adaptive_solver(
+        t, ite = adaptive_solver(
             nonlinear_solver,
             problem,
             t,
@@ -1249,12 +1251,13 @@ def adaptive_solver(
             max_error,
             ttol,
             dt_min,
+            ite,
             time_dependent_arguments,
             approximation,
         )
 
     # Return the new time step
-    return t
+    return t, ite
 
 
 def Normal_vector(mesh: df.Mesh):

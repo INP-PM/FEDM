@@ -49,6 +49,7 @@ N0 = p0*3.21877e22 #[m^-3]
 U_w  = 3000  #[V]
 approximation = 'LFA' # Type of approximation used in the model
 path = files.file_input / model # Path where input files for desired model are stored
+files.output_folder_path = "./output_Galerkin" # Rename output dir from "output" to "output_Galerkin"
 
 # ============================================================================
 # Reading species list and particle properties, obtaining number of species for which the problem is solved and creating
@@ -366,7 +367,7 @@ if linear_solver == 'gmrs':
 
 ite_tot = 0
 
-with open("iteration.csv","a") as f:
+with open(files.output_folder_path + "/iteration.csv","a") as f:
     f.write("iteration, dt\n")
 
 
@@ -386,7 +387,7 @@ while abs(t-T_final)/T_final > 1e-6:
 
     ite_tot = 0
 
-    with open("iteration.csv","a") as f:
+    with open(files.output_folder_path + "/iteration.csv","a") as f:
         f.write("%s, %s\n" % (ite_tot, dt.time_step))
 
     ## For the constant time step, comment previous and  uncomment following code block

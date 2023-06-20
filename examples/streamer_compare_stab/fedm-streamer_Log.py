@@ -49,6 +49,7 @@ N0 = p0*3.21877e22 #[m^-3]
 U_w  = 3000  #[V]
 approximation = 'LFA' # Type of approximation used in the model
 path = files.file_input / model # Path where input files for desired model are stored
+files.output_folder_path = "./output_LOG" # Rename output dir from "output" to "output_LOG"
 
 # ============================================================================
 # Reading species list and particle properties, obtaining number of species for which the problem is solved and creating
@@ -333,7 +334,7 @@ if linear_solver == 'gmrs':
     nonlinear_solver.parameters["preconditioner"] = "hypre_amg" # setting the preconditioner, uncomment if iterative solver is used
 
 ite_tot = 0 
-with open("iteration.csv","a") as f:
+with open(files.output_folder_path + "/iteration.csv","a") as f:
     f.write("iteration, dt\n")
 
 # ============================================================================
@@ -349,7 +350,7 @@ while t < T_final:
     t, ite = adaptive_solver(nonlinear_solver, problem, t, dt, dt_old, u_new, u_old, variable_list_new, variable_list_old, assigner, error, files.error_file, max_error, ttol, dt_min, time_dependent_arguments = [], approximation = approximation)
 
     ite_tot += ite
-    with open("iteration.csv","a") as f:
+    with open(files.output_folder_path + "/iteration.csv","a") as f:
         f.write("%s, %s \n " % (ite_tot, dt.time_step) )
     ## For the constant time step, comment previous and  uncomment following code block
     # t += dt.time_step

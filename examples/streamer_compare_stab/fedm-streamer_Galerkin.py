@@ -269,7 +269,7 @@ alpha = (1.1944e6 + 4.3666e26 * E_m**(-3))*exp(-2.73e7/E_m)-340.75 # Setting up 
 # tauwgradv[1] = sign[1]*(E_m**(-1)*(h_mesh/2)*dot(E, grad(v[1])))
 
 Gamma[0] = 0.0 # Setting up ion flux
-Gamma[1] = Flux(sign[1], u[1], D[1], mu[1], E) # Setting up electron flux
+Gamma[1] = Flux(sign[1], u[1], D[1], mu[1], E, logarithm_representation=False) # Setting up electron flux
 
 f[0] = alpha*mu[1]*E_m*u[1] # Ion source term definition
 f[1] = alpha*mu[1]*E_m*u[1] # Electron source term definition

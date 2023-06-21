@@ -275,10 +275,7 @@ tauwgradv[0] = 0.0*v[0] #*vsupg # E_m**(-1)*(h/(2*mu_y[0]))*mu_y[0]*inner(E, gra
 tauwgradv[1] = sign[1]*(E_m**(-1)*(h_mesh/2)*dot(E, grad(v[1])))
 
 Gamma[0] = 0.0 # Setting up ion flux
-Gamma[1] = Flux(sign[1], u[1], D[1], mu[1], E) # Setting up electron flux
-
-Gamma_old[0] = 0.0 # Setting up ion flux
-Gamma_old[1] = Flux(sign[1], u_old[1], D[1], mu[1], E) # Setting up electron flux
+Gamma[1] = Flux(sign[1], u[1], D[1], mu[1], E, , logarithm_representation=False) # Setting up electron flux
 
 f[0] = alpha*mu[1]*E_m*u[1] # Ion source term definition
 f[1] = alpha*mu[1]*E_m*u[1] # Electron source term definition

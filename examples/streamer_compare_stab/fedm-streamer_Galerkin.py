@@ -366,8 +366,9 @@ if linear_solver == 'gmrs':
     nonlinear_solver.parameters["preconditioner"] = "hypre_amg" # setting the preconditioner, uncomment if iterative solver is used
 
 ite_tot = 0
-
-with open(files.output_folder_path + "/iteration.csv","a") as f:
+output_ite_file = str(files.output_folder_path)
+output_ite_file += "/iteration.csv"
+with open(output_ite_file,"w") as f:
     f.write("iteration, dt\n")
 
 
@@ -387,7 +388,7 @@ while abs(t-T_final)/T_final > 1e-6:
 
     ite_tot = 0
 
-    with open(files.output_folder_path + "/iteration.csv","a") as f:
+    with open(output_ite_file,"a") as f:
         f.write("%s, %s\n" % (ite_tot, dt.time_step))
 
     ## For the constant time step, comment previous and  uncomment following code block

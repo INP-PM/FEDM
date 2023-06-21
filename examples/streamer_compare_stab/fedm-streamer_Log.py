@@ -335,8 +335,8 @@ if linear_solver == 'gmrs':
 
 ite_tot = 0 
 output_ite_file = str(files.output_folder_path)
-output_ite_file += "iteration.csv"
-with open(output_ite_file,"a") as f:
+output_ite_file += "/iteration.csv"
+with open(output_ite_file,"w") as f:
     f.write("iteration, dt\n")
 
 # ============================================================================

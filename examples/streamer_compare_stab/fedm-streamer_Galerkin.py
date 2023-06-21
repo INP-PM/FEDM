@@ -176,7 +176,6 @@ u_old1V = Function_definition(V, 'Function', number_of_equations) # Number densi
 mu = Function_definition(V, 'Function', number_of_equations) # Defining variable for mobility
 D = Function_definition(V, 'Function', number_of_equations) # Defining variable for diffusion coefficient
 Gamma = Function_definition(V, 'Function', number_of_equations) # Defining list of variables for particle flux
-Gamma_old = Function_definition(V, 'Function', number_of_equations) # Defining list of variables for particle flux
 f = Function_definition(V, 'Function', number_of_equations) # Defining list of variables for source term
 
 tauwgradv = Function_definition(V, 'Function', number_of_equations) # Defining variable for stabilization
@@ -272,9 +271,6 @@ alpha = (1.1944e6 + 4.3666e26 * E_m**(-3))*exp(-2.73e7/E_m)-340.75 # Setting up 
 Gamma[0] = 0.0 # Setting up ion flux
 Gamma[1] = Flux(sign[1], u[1], D[1], mu[1], E) # Setting up electron flux
 
-Gamma_old[0] = 0.0 # Setting up ion flux
-Gamma_old[1] = Flux(sign[1], u_old[1], D[1], mu[1], E) # Setting up electron flux
-
 f[0] = alpha*mu[1]*E_m*u[1] # Ion source term definition
 f[1] = alpha*mu[1]*E_m*u[1] # Electron source term definition
 i = 0
@@ -305,7 +301,6 @@ while i < number_of_species:
         r=r, 
         D=D[i], 
         log_representation=False, 
-        Gamma_old=Gamma_old[i],
         ) # Definition of variational formulation of the balance equation for the electrons
 
     # F += weak_form_supg_balance_equation(

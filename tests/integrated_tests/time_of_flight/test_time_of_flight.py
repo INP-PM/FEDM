@@ -34,7 +34,7 @@ def data_dir(tmpdir_factory):
 @pytest.fixture
 def tof_data(data_dir):
     path = data_dir / "number density" / "electrons" / "electrons000000.vtu"
-    return read_vtu(path, field_name="f_3199")
+    return read_vtu(path, field_name="f_52")
 
 
 @pytest.fixture

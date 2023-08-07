@@ -1,0 +1,25 @@
+:orphan:
+
+User Guide
+==========
+FEDM consists of three modules
+
+- ``functions.py`` storing the functions used for problem definition,
+
+- ``file_io.py`` for input and output of the data and
+
+- ``physical_constants.py`` for storing the physical constants
+
+These modules are used in the main script to set up the model and solve the equations, as illustrated in the examples.
+
+In order to run the FEDM code, FEniCS version 2019.1.0. is required. The easiest way to obtain the desired version of FEniCS is using a Docker image.
+Note that the FEniCS is depricated and thath the new version FEniCSx 0.7 has been recently introduced.
+FEDM is primarily developed to be used with FEniCS (although some functions might be used with other python programmes) and there are no plans of
+updating it to be compatible with the newest version (at least until the stable FEniCSx version is published).
+
+.. toctree::
+   :maxdepth: 2
+
+   installation
+   features
+   examples

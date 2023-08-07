@@ -1,0 +1,47 @@
+:orphan:
+
+fedm package
+============
+
+Submodules
+----------
+
+fedm.file\_io module
+--------------------
+
+.. automodule:: fedm.file_io
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+fedm.functions module
+---------------------
+
+.. automodule:: fedm.functions
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+fedm.physical\_constants module
+-------------------------------
+
+.. automodule:: fedm.physical_constants
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+fedm.utils module
+-----------------
+
+.. automodule:: fedm.utils
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Module contents
+---------------
+
+.. automodule:: fedm
+   :members:
+   :undoc-members:
+   :show-inheritance:

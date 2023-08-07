@@ -1,0 +1,4 @@
+:orphan:
+
+.. include:: md_files/acknowledgment.md
+   :parser: myst_parser.sphinx_

@@ -1,0 +1,16 @@
+# Contributing
+Any kind of contribution that would improve the project, whether new feature suggestions, bug reports or providing your own code suggestions, is welcome and encouraged.  Please, try to follow the following guidelines when contributing to the project.
+
+**Bug reports**
+
+Before creating bug reports, please check if somebody already reported the same bug, use a title that clearly describes the issue, provide a detailed description of the bug (including how you use FEDM, on what machine and operating system) and the minimum working example that illustrates the bug.
+
+**Feature suggestion**
+
+If you have a new feature suggestion, please check if it has already been suggested and then clearly describe the idea behind the new feature you would like to see in the FEDM.
+
+**Code suggestion**
+
+When contributing new code or modifying the existing, the authors would appreciate it if you would first discuss the changes you wish to make by creating a new issue or sending an e-mail to the authors. When contributing changes, try to use [this](https://git-scm.com/book/en/v2/GitHub-Contributing-to-a-Project) workflow.
+
+In any case, communicating with the authors will make it easier to incorporate your changes and make the experience smoother for everyone. The authors look forward to your input.

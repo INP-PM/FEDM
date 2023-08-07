@@ -1,0 +1,8 @@
+Index
+=====
+
+This section describes functions and classes introduced in FEDM. Each function has a brief description of what it does, along with the list of required arguments and returning objects.
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`

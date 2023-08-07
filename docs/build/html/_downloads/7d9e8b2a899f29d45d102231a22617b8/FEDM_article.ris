@@ -1,0 +1,22 @@
+TY  - JOUR
+ID  - Jovanovic-2023
+AU  - Jovanović, Aleksandar P
+AU  - Loffhagen, Detlef
+AU  - Becker, Markus M
+TI  - Introduction and verification of FEDM, an open-source FEniCS-based discharge modelling code
+J2  - Plasma Sources Sci. Technol.
+T2  - Plasma Sources Science and Technology
+DA  - 2023/01/01/
+VL  - 32
+SP  - 044003
+IS  - 4
+DO  - 10.1088/1361-6595/acc54b
+PB  - IOP Publishing
+AB  - This paper introduces the finite element discharge modelling (FEDM) code, which was developed using the open-source computing platform FEniCS (https://fenicsproject.org). Building on FEniCS, the FEDM code utilises the finite element method to solve partial differential equations. It extends FEniCS with features that allow the automated implementation and numerical solution of fully coupled fluid-Poisson models including an arbitrary number of particle balance equations. The code is verified using the method of exact solutions and benchmarking. The physically based examples of a time-of-flight experiment, a positive streamer discharge in atmospheric-pressure air and a low-pressure glow discharge in argon are used as rigorous test cases for the developed modelling code and to illustrate its capabilities. The performance of the code is compared to the commercial software package COMSOL Multiphysics® and a comparable parallel speed-up is obtained. It is shown that the iterative solver implemented by FEDM performs particularly well on high-performance compute clusters.
+KW  - plasma modelling 
+KW  - fluid-Poisson model 
+KW  - FEniCS 
+KW  - FEDM
+UR  - https://iopscience.iop.org/article/10.1088/1361-6595/acc54b/pdf
+L1  - file:///usr/share/i-librarian/www/library/pdfs/0/6/06156.pdf
+ER  - 

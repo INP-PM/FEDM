@@ -1,0 +1,32 @@
+Finite Element Discharge Modelling (FEDM) code utilises the FEniCS computing platform (https://fenicsproject.org) for fluid-Poisson modelling of the electrical discharges operating under various conditions. The code extends FEniCS with features that allow the automated implementation and numerical solution of fully-coupled fluid-Poisson models including an arbitrary number of particle balance equations. The fluid-Poisson models comprise the system of balance equations for particle species, coupled with Poisson's equation and, depending on the used approximation, the electron energy balance equation. In practice, it is often required to take into account a large number of particle species and processes, so the manual implementation of the balance equations and the source terms becomes a time-consuming, tedious and error-prone process. This package automates the procedure by providing a set of functions that allows an easy definition of the problem. In addition, the package offers a method for the time discretisation of the time-dependent equations using a variable time-step backward differentiation formula with appropriate time-step size control. This time-discretisation method allows one to tackle the problem of stiff equations that commonly occur in plasma modelling due to the very different time scales of the various reaction processes.
+
+# Features
+- automated implementation of the variational forms of Poisson's equation and an arbitrary number of balance equations for particle species based on a predefined species list
+- automated source term generation based on the reaction kinetics scheme from the input files
+- adaptive time-step control using variable time-step Backward differentiation formula (BDF) of the second-order and proportional-integral-derivative (PID) controller.
+
+# Module structure
+FEDM consists of three modules
+
+- functions.py storing the functions used for problem definition,
+
+- file_io.py for input and output of the data and
+
+- physical_constants.py for storing the physical constants.
+
+Detailed information on each function can be found in index section.
+
+# Build status
+
+Initial version 1.0
+
+# Examples
+The use of the FEDM code is illustrated by performing three case studies:
+- **modelling the spatiotemporal evolution of an electron cloud in a time-of-flight experiment** which was used for modelling code verification of the particle balance equations by method of exact solutions
+- **positive streamer in synthetic air at pressure of 750 Torr and a gas temperature of 300 K** used for modelling code verification by benchmarking
+- **an abnormal glow discharge in argon at low pressure** used to illustrate features of the code.
+
+# Citation
+
+If you use the FEDM code for your research, please cite the article:<br />
+Aleksandar P. Jovanović, Detlef Loffhagen, Markus M. Becker 2023 Introduction and verification of FEDM, an open-source FEniCS-based discharge modelling code <em>Plasma Sources Sci. Technol. [</em> **32** 044003](https://doi.org/10.1088/1361-6595/acc54b).

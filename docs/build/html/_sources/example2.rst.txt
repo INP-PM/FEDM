@@ -1,0 +1,4 @@
+:orphan:
+
+.. include:: md_files/streamer_discharge_example.md
+   :parser: myst_parser.sphinx_

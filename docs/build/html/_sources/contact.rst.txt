@@ -1,0 +1,8 @@
+Contact
+=======
+
+If you have any suggestions, complaints, bug reports or perhaps questions about the code and the models,
+in addition to creating an issue on GitHub, you can also reach us by e-mail at:
+
+.. include:: md_files/contact.md
+   :parser: myst_parser.sphinx_

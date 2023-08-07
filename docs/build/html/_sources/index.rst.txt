@@ -1,0 +1,46 @@
+.. FEDM documentation master file, created by
+   sphinx-quickstart on Thu Jul 20 08:51:02 2023.
+   You can adapt this file completely to your liking, but it should at least
+   contain the root `toctree` directive.
+
+.. image:: images/logo.svg
+  :scale: 100%
+  :align: center
+
+|
+
+Introduction
+============
+.. include:: md_files/introduction.md
+   :parser: myst_parser.sphinx_
+
+Download citation:
+:download:`bib<citation/FEDM_article.bib>`
+:download:`ris<citation/FEDM_article.ris>`
+:download:`csv<citation/FEDM_article.csv>`
+
+Quickstart
+==========
+.. include:: md_files/quickstart.md
+   :parser: myst_parser.sphinx_
+
+.. important::
+  .. include:: md_files/note.md
+     :parser: myst_parser.sphinx_
+
+Illustration
+============
+.. image:: images/animation.gif
+  :scale: 33%
+
+Streamer development in dielectric barrier discharge modelled with FEDM
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+
+   user_guide
+   contribution
+   indices_and_tables
+   acknowledgment
+   contact

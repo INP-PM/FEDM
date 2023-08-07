@@ -1,0 +1,98 @@
+# Installation
+
+To run the FEDM code, it is required to install the Docker. On Ubuntu/Debian Linux systems, this can be done using the official repository in the following way:
+
+```bash
+sudo apt update
+sudo apt-get install \
+    apt-transport-https \
+    ca-certificates \
+    curl \
+    gnupg-agent \
+    software-properties-common
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+sudo apt-key fingerprint 0EBFCD88
+sudo add-apt-repository \
+   "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+   $(lsb_release -cs) \
+   stable"
+sudo apt update
+sudo apt-get install docker-ce docker-ce-cli containerd.io
+```
+
+After installing the Docker, the latest stable FEniCS image (FEniCS 2019.1.0) can be run using the following command in the terminal:
+
+```bash
+sudo docker run -ti \
+    -v $(pwd):/home/fenics/shared \
+    -v /tmp \
+    quay.io/fenicsproject/stable
+```
+
+Note that repeating above described procedure always creates a new container, which may eventually exhaust the local storage. Therefore, it is suggested to restart the same container using
+ ```bash
+ docker start my_container
+ docker attach my_container
+ ```
+
+The following steps will also let you run Docker as a non-root user:
+
+```bash
+sudo groupadd docker # create docker group if none exists
+sudo usermod -aG docker $USER # Add self to docker group
+# ... log out and log back in, or call `newgrp docker` ...
+docker run -ti \
+    -v $(pwd):/home/fenics/shared \
+    -v /tmp \
+    quay.io/fenicsproject/stable
+```
+
+Here, it is assumed that the FEDM code is located in the subdirectory `fedm` within the current directory. Now, switch to the shared volume mounted in the container to use FEDM:
+
+```bash
+cd shared/fedm
+```
+
+The code directory has the following structure:
+
+```
+fedm
+├── examples
+│   ├── glow_discharge
+│   ├── streamer_discharge
+│   └── time_of_flight
+├── fedm
+│   ├── file_io.py
+│   ├── functions.py
+│   ├── __init__.py
+│   ├── physical_constants.py
+│   ├── __pycache__
+│   └── utils.py
+├── LICENSE
+├── pyproject.toml
+├── README.md
+├── run_tests.sh
+├── setup.cfg
+├── setup.py
+└── tests
+    ├── integrated_tests
+    └── unit_tests
+```
+
+FEDM can be installed within the Docker container using:
+
+```bash
+python3 -m pip install --user .
+```
+
+The directory `Examples` contains the code for the three case studies described in [ADD REFERENCE]. One can execute each example by running the following command in the corresponding directory (you may need to use `sudo`):
+
+```bash
+python3 fedm-name_of_example.py
+```
+
+or in parallel using MPI:
+
+```bash
+mpirun –np 8 python3 fedm-name_of_example.py
+```

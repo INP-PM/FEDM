@@ -1,0 +1,4 @@
+:orphan:
+
+.. include:: md_files/glow_discharge_example.md
+   :parser: myst_parser.sphinx_

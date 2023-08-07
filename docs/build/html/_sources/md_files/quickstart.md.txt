@@ -1,0 +1,9 @@
+1. Download and run the legacy FEniCS docker image:
+```bash
+docker run -ti -v $(pwd):/home/fenics/shared -v /tmp quay.io/fenicsproject/stable
+```
+
+2. Install FEDM:
+```bash
+python3 -m pip install --user .
+```

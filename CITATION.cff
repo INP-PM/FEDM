@@ -1,0 +1,62 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: Finite Element Discharge Modelling (FEDM)
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - family-names: Jovanović
+    given-names: Aleksandar
+    affiliation: >-
+      Leibniz Institute for Plasma Science and Technology
+      (INP)
+    orcid: 'https://orcid.org/0000-0002-7104-6466'
+    email: aleksandar.jovanovic@inp-greifswald.de
+  - family-names: Pattinson
+    given-names: Liam
+  - family-names: Pile
+    given-names: Raphaël
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.7795886
+    description: 'FEDM Release: v1.0.0'
+  - type: doi
+    value: 10.1088/1361-6595/acc54b
+    description: Introduction and verification of FEDM
+repository-code: 'https://github.com/INP-PM/FEDM'
+url: 'https://inp-pm.github.io/FEDM/'
+abstract: >-
+  Finite Element Discharge Modelling (FEDM) code utilises
+  the FEniCS computing platform (https://fenicsproject.org)
+  for fluid-Poisson modelling of the electrical discharges
+  operating under various conditions. The code extends
+  FEniCS with features that allow the automated
+  implementation and numerical solution of fully-coupled
+  fluid-Poisson models including an arbitrary number of
+  particle balance equations. The fluid-Poisson models
+  comprise the system of balance equations for particle
+  species, coupled with Poisson’s equation and, depending on
+  the used approximation, the electron energy balance
+  equation. In practice, it is often required to take into
+  account a large number of particle species and processes,
+  so the manual implementation of the balance equations and
+  the source terms becomes a time-consuming, tedious and
+  error-prone process. This package automates the procedure
+  by providing a set of functions that allows an easy
+  definition of the problem. In addition, the package offers
+  a method for the time discretisation of the time-dependent
+  equations using a variable time-step backward
+  differentiation formula with appropriate time-step size
+  control. This time-discretisation method allows one to
+  tackle the problem of stiff equations that commonly occur
+  in plasma modelling due to the very different time scales
+  of the various reaction processes.
+keywords:
+  - FEniCS
+  - Python
+  - Low-temperature plasma
+  - Plasma modelling
+license: LGPL-3.0
